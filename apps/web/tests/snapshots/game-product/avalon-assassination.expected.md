@@ -1,0 +1,66 @@
+- main:
+  - button "TABLE FORGE"
+  - text: LLM 原生游戏引擎
+  - button "开启回合通知"
+  - paragraph: 第 4 次任务
+  - heading "阿瓦隆圆桌" [level=1]
+  - button "结束对局"
+  - text: 善方 3
+  - strong: 任务 4 · 3 人
+  - text: 邪方 0 1 2 人 失败票 0 2 3 人 失败票 0 3 2 人 失败票 0 4 3 人 5 3 人 否决计数
+  - strong: 0 / 5
+  - complementary:
+    - text: 你的身份
+    - strong: 刺客
+    - text: 邪方
+    - paragraph: 你知道：AI 1（莫德雷德的爪牙）
+  - button "圆桌成员 你 刺客" [disabled]:
+    - text: 圆桌成员
+    - strong: 你
+    - text: 刺客
+  - button "圆桌成员 AI 1 莫德雷德的爪牙" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 1
+    - text: 莫德雷德的爪牙
+  - button "圆桌成员 AI 2 梅林" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 2
+    - text: 梅林
+  - button "队长 AI 3 亚瑟的忠臣" [disabled]:
+    - text: 队长
+    - strong: AI 3
+    - text: 亚瑟的忠臣
+  - button "圆桌成员 AI 4 亚瑟的忠臣" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 4
+    - text: 亚瑟的忠臣
+  - strong: 身份揭晓
+  - text: 全部角色已经公开
+  - heading "刺杀前密谈" [level=2]
+  - paragraph:
+    - strong: AI 1
+    - text: “我判断 AI 2 最像梅林。”
+  - paragraph:
+    - strong: 你
+    - text: “我同意刺杀 AI 2。”
+  - strong: 邪方胜利
+  - text: 刺客找到了梅林
+  - heading "圆桌记录" [level=2]
+  - group:
+    - text: 队伍通过 · 你、AI 1 · 顺时针
+    - paragraph:
+      - strong: 票型：3 票赞成 · 2 票否决
+  - group: 队伍通过 · 你、AI 1、AI 2 · 顺时针
+  - group: 队伍通过 · 你、AI 1 · 顺时针
+  - group:
+    - text: AI 审计时间线（1 条）
+    - paragraph: 按持久化事件时间排列；“分析”是模型私有推理，“动作”是模型调用游戏工具的参数，规则声明为匿名的决策内容会脱敏。
+    - paragraph: 未能读取：AI 2、AI 3、AI 4
+    - list:
+      - listitem:
+        - article:
+          - text: "#1"
+          - strong: AI 1
+          - text: 刺杀前密谈 已接受动作
+          - time: {{clock}} · 模型回合 1
+          - paragraph: 邪方密谈：“我判断 AI 2 最像梅林。”

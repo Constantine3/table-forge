@@ -5,8 +5,11 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   ActionWindowId,
   GameCommandId,
+  MATCH_FORMAT_VERSION,
   MatchId,
   SeatId,
+  UnsupportedGameRulesError,
+  UnsupportedMatchFormatError,
   type CreateMatchRequest,
   type GameActionWindow,
   type GameDefinition,
@@ -45,6 +48,38 @@ const asObject = (value: GameJson): Readonly<Record<string, GameJson>> => {
 const asString = (value: unknown, field: string): string => {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`corrupt match event ${field}`)
   return value
+}
+
+const toGameJson = (value: unknown, label: string): GameJson => {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (Array.isArray(value)) return value.map(item => toGameJson(item, label))
+  if (typeof value !== 'object') throw new Error(`${label} must be lossless JSON`)
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, toGameJson(item, label)]))
+}
+
+const isGameJsonArray = (value: GameJson): value is readonly GameJson[] => Array.isArray(value)
+
+const gameJsonEquals = (left: GameJson, right: GameJson): boolean => {
+  if (left === right) return true
+  if (isGameJsonArray(left)) {
+    if (!isGameJsonArray(right) || left.length !== right.length) return false
+    return left.every((value, index) => {
+      const candidate = right[index]
+      return candidate !== undefined && gameJsonEquals(value, candidate)
+    })
+  }
+  if (isGameJsonArray(right)) return false
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false
+  const leftRecord = left as Readonly<Record<string, GameJson>>
+  const rightRecord = right as Readonly<Record<string, GameJson>>
+  const leftKeys = Object.keys(leftRecord)
+  return leftKeys.length === Object.keys(rightRecord).length && leftKeys.every((key) => {
+    const leftValue = leftRecord[key]
+    const rightValue = rightRecord[key]
+    return leftValue !== undefined && rightValue !== undefined
+      && gameJsonEquals(leftValue, rightValue)
+  })
 }
 
 /** In-memory persistence provider intended for tests and ephemeral compositions. */
@@ -114,11 +149,11 @@ export class GameEngine extends TypertRemoteService implements MatchService {
     if (request.seats.filter(seat => seat.controller.type === 'human').length > 1) throw new Error('a match supports at most one human seat')
     const createdAt = Date.now()
     const id = MatchId(crypto.randomUUID())
-    const header = {
-      id, formatVersion: 0 as const, gameId: definition.id, rulesVersion: definition.rulesVersion,
+    const header: Omit<MatchRecord, 'events'> = {
+      id, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: definition.rulesVersion,
       config, seats: request.seats, createdAt,
     }
-    const initial = definition.initial({ config, seats: request.seats })
+    const initial = definition.initial({ config, seats: request.seats, randomSeed: crypto.randomUUID() })
     const events = this.ruleEvents(0, initial)
     const state = this.reduce(definition, initial)
     const pending = definition.pending(state)
@@ -141,8 +176,14 @@ export class GameEngine extends TypertRemoteService implements MatchService {
     const headers = await this.ctx.gamePersistence.list()
     const views: MatchView[] = []
     for (const header of headers) {
-      const record = await this.requireRecord(header.id)
-      views.push(this.project(record, this.definitionFor(record)))
+      try {
+        if (header.formatVersion !== MATCH_FORMAT_VERSION) continue
+        const record = await this.requireRecord(header.id)
+        views.push(this.project(record, this.definitionFor(record)))
+      } catch (error) {
+        if (error instanceof UnsupportedGameRulesError) continue
+        throw error
+      }
     }
     return views.sort((left, right) => right.id.localeCompare(left.id))
   }
@@ -152,23 +193,26 @@ export class GameEngine extends TypertRemoteService implements MatchService {
       const record = await this.requireRecord(request.matchId)
       const definition = this.definitionFor(record)
       const derived = this.derive(record, definition)
-      const action = definition.validateAction(request.action)
+      const wireAction = toGameJson(request.action, 'game action')
       const prior = derived.commands.get(request.commandId)
       if (prior !== undefined) {
         if (prior.windowId !== request.windowId || prior.seatId !== request.seatId
-          || JSON.stringify(prior.action) !== JSON.stringify(action)) throw new Error(`command '${request.commandId}' was reused with different input`)
+          || !gameJsonEquals(prior.action, wireAction)) throw new Error(`command '${request.commandId}' was reused with different input`)
         return this.project(record, definition, request.seatId)
       }
       if (derived.abandoned) throw new Error('match is abandoned')
       if (derived.window === undefined || derived.window.id !== request.windowId) throw new Error('action window is closed')
       if (!derived.window.window.requiredSeats.includes(request.seatId)) throw new Error(`seat '${request.seatId}' is not actionable`)
       if (derived.window.submissions.has(request.seatId)) throw new Error(`seat '${request.seatId}' already submitted`)
+      const seat = record.seats.find(candidate => candidate.id === request.seatId)
+      if (seat === undefined) throw new Error(`seat '${request.seatId}' is not part of the match`)
+      const action = definition.action({ state: derived.state, window: derived.window.window, seat }).validate(wireAction)
       const time = Date.now()
       const submission: MatchEvent = {
         seq: record.events.length,
         time,
         type: 'match/action-submitted',
-        data: { windowId: request.windowId, commandId: request.commandId, seatId: request.seatId, action },
+        data: { windowId: request.windowId, commandId: request.commandId, seatId: request.seatId, input: wireAction, action },
       }
       const submissions = new Map(derived.window.submissions)
       submissions.set(request.seatId, action)
@@ -226,22 +270,26 @@ export class GameEngine extends TypertRemoteService implements MatchService {
 
   private async serial<T>(matchId: MatchId, operation: () => Promise<T>): Promise<T> {
     const previous = this.tails.get(matchId) ?? Promise.resolve()
-    let release!: () => void
-    const tail = new Promise<void>((resolve) => { release = resolve })
-    const queued = previous.then(() => tail)
+    const tail = Promise.withResolvers<void>()
+    const queued = previous.then(() => tail.promise)
     this.tails.set(matchId, queued)
     await previous
     try {
       return await operation()
     } finally {
-      release()
+      tail.resolve()
       if (this.tails.get(matchId) === queued) this.tails.delete(matchId)
     }
   }
 
   private definitionFor(record: MatchRecord): GameDefinition {
+    if (record.formatVersion !== MATCH_FORMAT_VERSION) {
+      throw new UnsupportedMatchFormatError(record.id, record.formatVersion)
+    }
     const definition = this.ctx.gameDefinitions.require(record.gameId)
-    if (definition.rulesVersion !== record.rulesVersion) throw new Error(`unsupported rules version ${record.rulesVersion} for '${record.gameId}'`)
+    if (definition.rulesVersion !== record.rulesVersion) {
+      throw new UnsupportedGameRulesError(record.id, record.gameId, record.rulesVersion, definition.rulesVersion)
+    }
     return definition
   }
 
@@ -258,9 +306,14 @@ export class GameEngine extends TypertRemoteService implements MatchService {
       } else if (event.type === 'match/action-opened') {
         const required = data.requiredSeats
         if (!Array.isArray(required)) throw new Error('corrupt match event requiredSeats')
+        if (data.audience !== 'public' && data.audience !== 'required-seats') throw new Error('corrupt match event audience')
         window = {
           id: ActionWindowId(asString(data.windowId, 'windowId')),
-          window: { key: asString(data.key, 'key'), requiredSeats: required.map(value => SeatId(asString(value, 'requiredSeats'))) },
+          window: {
+            key: asString(data.key, 'key'),
+            requiredSeats: required.map(value => SeatId(asString(value, 'requiredSeats'))),
+            audience: data.audience,
+          },
           submissions: new Map(),
         }
         blockedSeats.clear()
@@ -268,9 +321,11 @@ export class GameEngine extends TypertRemoteService implements MatchService {
         if (window === undefined || window.id !== data.windowId) throw new Error('corrupt match submission window')
         const seat = SeatId(asString(data.seatId, 'seatId'))
         const action = data.action ?? null
+        const input = data.input
+        if (input === undefined) throw new Error('corrupt match event input')
         window.submissions.set(seat, action)
         blockedSeats.delete(seat)
-        commands.set(GameCommandId(asString(data.commandId, 'commandId')), { windowId: window.id, seatId: seat, action })
+        commands.set(GameCommandId(asString(data.commandId, 'commandId')), { windowId: window.id, seatId: seat, action: input })
       } else if (event.type === 'match/controller-blocked') {
         if (window === undefined || window.id !== data.windowId) throw new Error('corrupt match controller failure window')
         blockedSeats.set(SeatId(asString(data.seatId, 'seatId')), asString(data.message, 'message'))
@@ -293,18 +348,30 @@ export class GameEngine extends TypertRemoteService implements MatchService {
   private project(record: MatchRecord, definition: GameDefinition, seat?: SeatId, knownComplete?: boolean): MatchView {
     const derived = this.derive(record, definition)
     const finished = knownComplete ?? definition.pending(derived.state) === undefined
+    const windowVisible = derived.window !== undefined && (derived.window.window.audience === 'public'
+      || (seat !== undefined && derived.window.window.requiredSeats.includes(seat)))
+    const canAct = derived.window !== undefined && seat !== undefined
+      && derived.window.window.requiredSeats.includes(seat) && !derived.window.submissions.has(seat)
+    const seatSpec = canAct ? record.seats.find(candidate => candidate.id === seat) : undefined
+    const actionSchema = derived.window === undefined || seatSpec === undefined
+      ? undefined
+      : toGameJson(definition.action({ state: derived.state, window: derived.window.window, seat: seatSpec }).schema, 'game action schema')
     return {
       id: record.id,
       gameId: record.gameId,
       revision: record.events.length,
       status: derived.abandoned ? 'abandoned' : finished ? 'finished' : derived.blockedSeats.size > 0 ? 'blocked' : 'active',
       seats: record.seats,
-      blockedSeats: [...derived.blockedSeats].map(([seatId, message]) => ({ seatId, message })),
+      blockedSeats: windowVisible
+        ? [...derived.blockedSeats].map(([seatId, message]) => ({ seatId, message }))
+        : [],
       ...(derived.window === undefined ? {} : {
         window: {
           id: derived.window.id,
-          requiredSeats: derived.window.window.requiredSeats,
-          submittedSeats: [...derived.window.submissions.keys()],
+          requiredSeats: windowVisible ? derived.window.window.requiredSeats : [],
+          submittedSeats: windowVisible ? [...derived.window.submissions.keys()] : [],
+          canAct,
+          ...(actionSchema === undefined ? {} : { actionSchema }),
         },
       }),
       game: definition.view(derived.state, seat),
@@ -320,7 +387,10 @@ export class GameEngine extends TypertRemoteService implements MatchService {
   }
 
   private windowOpened(seq: number, matchId: MatchId, window: GameActionWindow, time = Date.now()): MatchEvent {
-    return { seq, time, type: 'match/action-opened', data: { windowId: `${matchId}:window:${seq}`, key: window.key, requiredSeats: window.requiredSeats } }
+    return {
+      seq, time, type: 'match/action-opened',
+      data: { windowId: `${matchId}:window:${seq}`, key: window.key, requiredSeats: window.requiredSeats, audience: window.audience },
+    }
   }
 
   private async requireRecord(matchId: MatchId): Promise<MatchRecord> {
@@ -344,11 +414,14 @@ export class GameEngine extends TypertRemoteService implements MatchService {
         }),
       ]
     }))
-    return this.create({
+    const created = await this.create({
       gameId: request.gameId,
       config: request.config,
       seats,
     })
+    const humanSeat = seats.find(seat => seat.controller.type === 'human')?.id
+    const record = await this.requireRecord(created.id)
+    return this.project(record, this.definitionFor(record), humanSeat)
   }
 
   /** List public match views through the Host/Client wire.
@@ -374,9 +447,15 @@ export class GameEngine extends TypertRemoteService implements MatchService {
   @Remote('get')
   async remoteGet(matchId: string): Promise<GameRemoteMatchView | undefined> {
     const brandedMatchId = MatchId(matchId)
-    const record = await this.ctx.gamePersistence.load(brandedMatchId)
-    const humanSeat = record?.seats.find(seat => seat.controller.type === 'human')?.id
-    return this.get(brandedMatchId, humanSeat)
+    try {
+      const record = await this.ctx.gamePersistence.load(brandedMatchId)
+      if (record === undefined) return undefined
+      const humanSeat = record.seats.find(seat => seat.controller.type === 'human')?.id
+      return this.project(record, this.definitionFor(record), humanSeat)
+    } catch (error) {
+      if (error instanceof UnsupportedMatchFormatError || error instanceof UnsupportedGameRulesError) return undefined
+      throw error
+    }
   }
 
   /** Submit an action through the JSON wire boundary.
@@ -407,14 +486,34 @@ export class GameEngine extends TypertRemoteService implements MatchService {
     return this.abandon(MatchId(matchId))
   }
 
-  /** Retry one blocked AI seat through the JSON wire boundary.
+  /** Retry every blocked AI seat without exposing private seat identities.
    * @param matchId - wire match id.
-   * @param seatId - blocked wire seat id.
-   * @returns committed match view after the retry event.
+   * @returns committed human-safe match view after the retry events.
    */
   @Remote('retry')
-  remoteRetry(matchId: string, seatId: string): Promise<GameRemoteMatchView> {
-    return this.retry(MatchId(matchId), SeatId(seatId))
+  async remoteRetry(matchId: string): Promise<GameRemoteMatchView> {
+    const brandedMatchId = MatchId(matchId)
+    return this.serial(brandedMatchId, async () => {
+      const record = await this.requireRecord(brandedMatchId)
+      const definition = this.definitionFor(record)
+      const derived = this.derive(record, definition)
+      if (derived.abandoned || derived.window === undefined) throw new Error('match has no active action window')
+      if (derived.blockedSeats.size === 0) throw new Error('match has no blocked controller')
+      const windowId = derived.window.id
+      const time = Date.now()
+      const events = [...derived.blockedSeats.keys()].map<MatchEvent>((seatId, index) => ({
+        seq: record.events.length + index,
+        time,
+        type: 'match/controller-retried',
+        data: { windowId, seatId },
+      }))
+      await this.ctx.gamePersistence.append(brandedMatchId, record.events.length, events)
+      this.ctx.emit('match/changed', brandedMatchId, record.events.length + events.length)
+      const committed = await this.requireRecord(brandedMatchId)
+      void this.scheduleControllers(committed, definition)
+      const humanSeat = record.seats.find(seat => seat.controller.type === 'human')?.id
+      return this.project(committed, definition, humanSeat)
+    })
   }
 
   /** Check configured AI routes from the Host that will run them.
@@ -458,7 +557,7 @@ export class GameEngine extends TypertRemoteService implements MatchService {
         seat,
         windowId: derived.window.id,
         prompt: definition.modelPrompt(derived.state, seat.id),
-        actionSchema: definition.actionSchema,
+        actionSchema: definition.action({ state: derived.state, window: derived.window.window, seat }).schema,
       }), seat.id, derived.window.id)
     }
   }

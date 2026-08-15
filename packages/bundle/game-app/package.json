@@ -18,9 +18,12 @@
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-game": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-game-avalon": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-game-rps": "workspace:^",
     "@deepseek-ai/dsh-game": "workspace:^",
     "@deepseek-ai/dsh-game-controller-agent": "workspace:^",
     "@deepseek-ai/dsh-game-engine": "workspace:^",
+    "@deepseek-ai/dsh-game-avalon": "workspace:^",
     "@deepseek-ai/dsh-game-persistence-sqlite": "workspace:^",
     "@deepseek-ai/dsh-game-rps": "workspace:^",
     "@deepseek-ai/dsh-host-directory-picker-browse": "workspace:^"

@@ -1,0 +1,56 @@
+- main:
+  - button "TABLE FORGE"
+  - text: LLM 原生游戏引擎
+  - button "开启回合通知"
+  - paragraph: 第 1 次任务
+  - heading "阿瓦隆圆桌" [level=1]
+  - button "结束对局"
+  - text: 善方 0
+  - strong: 任务 1 · 2 人
+  - text: 邪方 0 1 2 人 2 3 人 3 2 人 4 3 人 5 3 人 否决计数
+  - strong: 0 / 5
+  - complementary:
+    - text: 你的身份
+    - strong: 梅林
+    - text: 善方
+    - paragraph: 你知道：AI 1、AI 2
+  - button "队长 你" [disabled]:
+    - text: 队长
+    - strong: 你
+  - button "圆桌成员 AI 1" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 1
+  - button "圆桌成员 AI 2" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 2
+  - button "圆桌成员 AI 3" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 3
+  - button "圆桌成员 AI 4" [disabled]:
+    - text: 圆桌成员
+    - strong: AI 4
+  - strong: 顺时针
+  - text: 公开发言完成
+  - article:
+    - strong: 最终队伍
+    - text: 你、AI 2 · 顺时针发言
+  - heading "投票前发言" [level=2]
+  - paragraph:
+    - strong: AI 1
+    - text: “我是第 1 位发言者。”
+  - paragraph:
+    - strong: AI 2
+    - text: “我是第 2 位发言者。”
+  - paragraph:
+    - strong: AI 3
+    - text: “我是第 3 位发言者。”
+  - paragraph:
+    - strong: AI 4
+    - text: “我是第 4 位发言者。”
+  - paragraph:
+    - strong: 你
+    - text: “根据大家的发言，我把 AI 2 换入最终队伍。”
+  - heading "提交匿名投票" [level=2]
+  - paragraph: 五名玩家已经完成公开发言。全部提交后只公开赞成与否决票数。
+  - button "否决"
+  - button "赞成"

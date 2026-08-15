@@ -1,7 +1,11 @@
 /** SQLite provider for append-only match records. @module @deepseek-ai/dsh-game-persistence-sqlite */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { MatchId, SeatId, type GameJson, type GamePersistence, type MatchEvent, type MatchRecord, type MatchSeatSpec } from '@deepseek-ai/dsh-game'
+import {
+  MATCH_FORMAT_VERSION, MatchId, SeatId,
+  UnsupportedMatchFormatError,
+  type GameJson, type GamePersistence, type MatchEvent, type MatchRecord, type MatchSeatSpec,
+} from '@deepseek-ai/dsh-game'
 import z from '@deepseek-ai/schemastery'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -114,7 +118,7 @@ export class SqliteGamePersistence implements GamePersistence {
 
   list(): Promise<readonly Omit<MatchRecord, 'events'>[]> {
     const headers = this.db.prepare(`SELECT id, format_version, game_id, rules_version, config_json, seats_json, created_at
-      FROM matches ORDER BY created_at DESC`).all() as unknown as HeaderRow[]
+      FROM matches WHERE format_version = ? ORDER BY created_at DESC`).all(MATCH_FORMAT_VERSION) as unknown as HeaderRow[]
     return Promise.resolve(headers.map((header) => {
       const { events: _events, ...record } = decode(header, [])
       return record
@@ -145,7 +149,9 @@ interface EventRow {
 }
 
 const decode = (header: HeaderRow, events: readonly EventRow[]): MatchRecord => {
-  if (header.format_version !== 0) throw new Error(`match '${header.id}' has unsupported format ${header.format_version}`)
+  if (header.format_version !== MATCH_FORMAT_VERSION) {
+    throw new UnsupportedMatchFormatError(MatchId(header.id), header.format_version)
+  }
   if (header.id.length === 0 || header.game_id.length === 0
     || !Number.isInteger(header.rules_version) || !Number.isInteger(header.created_at)) {
     throw new Error(`match '${header.id}' has an invalid header`)
@@ -154,7 +160,7 @@ const decode = (header: HeaderRow, events: readonly EventRow[]): MatchRecord => 
   const seats = parseSeats(header.seats_json, header.id)
   return {
     id: MatchId(header.id),
-    formatVersion: 0,
+    formatVersion: MATCH_FORMAT_VERSION,
     gameId: header.game_id,
     rulesVersion: header.rules_version,
     config,

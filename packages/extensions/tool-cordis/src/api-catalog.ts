@@ -3258,8 +3258,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FsWriteOutcome {\n    operation: \'create\' | \'update\';\n    version: FsVersion;\n    before: string | null;\n    after: string;\n}',
   },
   {
+    name: 'GameActionInput',
+    declaration: 'export interface GameActionInput<State> {\n    readonly state: State;\n    readonly window: GameActionWindow;\n    readonly seat: MatchSeatSpec;\n}',
+  },
+  {
+    name: 'GameActionSpec',
+    declaration: 'export interface GameActionSpec {\n    readonly schema: Readonly<Record<string, GameJson>>;\n    validate(value: unknown): GameJson;\n}',
+  },
+  {
     name: 'GameActionWindow',
-    declaration: 'export interface GameActionWindow {\n    readonly key: string;\n    readonly requiredSeats: readonly SeatId[];\n}',
+    declaration: 'export interface GameActionWindow {\n    readonly key: string;\n    readonly requiredSeats: readonly SeatId[];\n    readonly audience: \'public\' | \'required-seats\';\n}',
   },
   {
     name: 'GameCommandId',
@@ -3271,15 +3279,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'GameControllerRequest',
-    declaration: 'export interface GameControllerRequest {\n    readonly matchId: MatchId;\n    readonly seat: MatchSeatSpec;\n    readonly windowId: ActionWindowId;\n    readonly prompt: string;\n    readonly actionSchema: Readonly<Record<string, unknown>>;\n}',
+    declaration: 'export interface GameControllerRequest {\n    readonly matchId: MatchId;\n    readonly seat: MatchSeatSpec;\n    readonly windowId: ActionWindowId;\n    readonly prompt: string;\n    readonly actionSchema: Readonly<Record<string, GameJson>>;\n}',
   },
   {
     name: 'GameDefinition',
-    declaration: 'export interface GameDefinition<State = unknown> {\n    readonly id: string;\n    readonly rulesVersion: number;\n    readonly configSchema: GameJson;\n    readonly actionSchema: Readonly<Record<string, unknown>>;\n    validateConfig(value: unknown): GameJson;\n    validateAction(value: unknown): GameJson;\n    initial(input: GameInitialInput): readonly GameRuleEvent[];\n    reduce(state: State | undefined, event: GameRuleEvent): State;\n    pending(state: State): GameActionWindow | undefined;\n    resolve(input: GameResolveInput<State>): readonly GameRuleEvent[];\n    view(state: State, seat?: SeatId): GameJson;\n    modelPrompt(state: State, seat: SeatId): string;\n}',
+    declaration: 'export interface GameDefinition<State = unknown> {\n    readonly id: string;\n    readonly rulesVersion: number;\n    readonly configSchema: GameJson;\n    validateConfig(value: unknown): GameJson;\n    initial(input: GameInitialInput): readonly GameRuleEvent[];\n    reduce(state: State | undefined, event: GameRuleEvent): State;\n    pending(state: State): GameActionWindow | undefined;\n    action(input: GameActionInput<State>): GameActionSpec;\n    resolve(input: GameResolveInput<State>): readonly GameRuleEvent[];\n    view(state: State, seat?: SeatId): GameJson;\n    modelPrompt(state: State, seat: SeatId): string;\n}',
   },
   {
     name: 'GameInitialInput',
-    declaration: 'export interface GameInitialInput {\n    readonly config: GameJson;\n    readonly seats: readonly MatchSeatSpec[];\n}',
+    declaration: 'export interface GameInitialInput {\n    readonly config: GameJson;\n    readonly seats: readonly MatchSeatSpec[];\n    readonly randomSeed: string;\n}',
   },
   {
     name: 'GameJson',
@@ -3575,7 +3583,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MatchRecord',
-    declaration: 'export interface MatchRecord {\n    readonly id: MatchId;\n    readonly formatVersion: 0;\n    readonly gameId: string;\n    readonly rulesVersion: number;\n    readonly config: GameJson;\n    readonly seats: readonly MatchSeatSpec[];\n    readonly createdAt: number;\n    readonly events: readonly MatchEvent[];\n}',
+    declaration: 'export interface MatchRecord {\n    readonly id: MatchId;\n    readonly formatVersion: number;\n    readonly gameId: string;\n    readonly rulesVersion: number;\n    readonly config: GameJson;\n    readonly seats: readonly MatchSeatSpec[];\n    readonly createdAt: number;\n    readonly events: readonly MatchEvent[];\n}',
   },
   {
     name: 'MatchSeatSpec',
@@ -3583,7 +3591,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MatchView',
-    declaration: 'export interface MatchView {\n    readonly id: MatchId;\n    readonly gameId: string;\n    readonly revision: number;\n    readonly status: \'active\' | \'blocked\' | \'abandoned\' | \'finished\';\n    readonly seats: readonly MatchSeatSpec[];\n    readonly window?: {\n        readonly id: ActionWindowId;\n        readonly requiredSeats: readonly SeatId[];\n        readonly submittedSeats: readonly SeatId[];\n    };\n    readonly blockedSeats: readonly {\n        readonly seatId: SeatId;\n        readonly message: string;\n    }[];\n    readonly game: GameJson;\n}',
+    declaration: 'export interface MatchView {\n    readonly id: MatchId;\n    readonly gameId: string;\n    readonly revision: number;\n    readonly status: \'active\' | \'blocked\' | \'abandoned\' | \'finished\';\n    readonly seats: readonly MatchSeatSpec[];\n    readonly window?: {\n        readonly id: ActionWindowId;\n        readonly requiredSeats: readonly SeatId[];\n        readonly submittedSeats: readonly SeatId[];\n        readonly canAct: boolean;\n        readonly actionSchema?: GameJson;\n    };\n    readonly blockedSeats: readonly {\n        readonly seatId: SeatId;\n        readonly message: string;\n    }[];\n    readonly game: GameJson;\n}',
   },
   {
     name: 'Message',

@@ -1,144 +1,202 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { GameRemoteCreateRequest, GameRemoteSubmitRequest } from '@deepseek-ai/dsh-game/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GameApp, type GameAppProps } from '../src/client/GameApp.tsx'
+import {
+  GameApp, type GameAppInjected, type GameAppProps, type GameAppState,
+} from '../src/client/GameApp.tsx'
 
-const provider = { id: 'local', name: 'Local', model: 'deepseek-v4-flash-vision', available: true }
-const secondProvider = { id: 'cloud', name: 'Cloud', model: 'hy3', available: true }
-const baseState = {
+const baseState: GameAppState = {
   match: undefined,
-  providers: [provider],
   matches: [],
-  audit: [],
-  rpsSetup: { defaultRounds: 3, maxRounds: 9 },
+  games: [{ id: 'rps', configSchema: {} }, { id: 'avalon', configSchema: {} }],
+  selectedGameId: undefined,
+  providers: [],
+  audit: undefined,
   busy: false,
   error: undefined,
 }
 
-const mount = (state: Record<string, unknown>, actions = {
-  createMatch: vi.fn((_request: GameRemoteCreateRequest) => Promise.resolve()),
-  submitAction: vi.fn((_request: GameRemoteSubmitRequest) => Promise.resolve()),
-  resetMatch: vi.fn(() => Promise.resolve()),
-  openMatch: vi.fn((_id: string) => Promise.resolve()),
-  retrySeat: vi.fn((_id: string) => Promise.resolve()),
-}) => {
+const mount = (state: GameAppState) => {
+  let currentState = state
+  const selectGame = vi.fn()
+  const openMatch = vi.fn(() => Promise.resolve())
+  const loadAudit = vi.fn(() => Promise.resolve())
+  const renderSlot = vi.fn((key: string, owner: { selectGame?: (id: string) => void }, options?: { entryKey?: string }) => {
+    if (key === 'game.catalog.item') return <button onClick={() => owner.selectGame?.('avalon')}>阿瓦隆目录卡</button>
+    return <div>界面：{options?.entryKey}</div>
+  })
+  const createMatch = vi.fn(() => Promise.resolve())
   const props = {
-    useGame: (select: (value: unknown) => unknown) => select(state),
-    ...actions,
+    useGame: (select: (value: GameAppState) => unknown) => select(currentState),
+    createMatch, submitAction: vi.fn(), resetMatch: vi.fn(), retryBlocked: vi.fn(), loadAudit,
+    selectGame, openMatch, renderSlot,
   }
-  return { ...render(<GameApp {...props as unknown as GameAppProps} />), actions }
+  const rendered = render(<GameApp {...props as unknown as GameAppProps} />)
+  return {
+    ...rendered, selectGame, openMatch, loadAudit, renderSlot, createMatch,
+    updateState(next: GameAppState) {
+      currentState = next
+      rendered.rerender(<GameApp {...props as unknown as GameAppProps} />)
+    },
+  }
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
-describe('game product view', () => {
-  it('creates human-AI and AI-AI tables from deployment choices', () => {
-    const first = mount(baseState)
-    fireEvent.change(screen.getByLabelText('总局数'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: '开始对局' }))
-    expect(first.actions.createMatch.mock.calls[0]![0].config).toEqual({ roundCount: 5 })
-    expect(first.actions.createMatch.mock.calls[0]![0].seats.map(seat => seat.id)).toEqual(['human', 'ai-1'])
-    first.unmount()
-
-    const second = mount({ ...baseState, providers: [provider, secondProvider] })
-    fireEvent.click(screen.getByRole('button', { name: 'AI 对 AI' }))
-    const providerInputs = screen.getAllByLabelText('提供方')
-    expect(providerInputs).toHaveLength(2)
-    fireEvent.change(providerInputs[0]!, { target: { value: 'cloud' } })
-    fireEvent.change(providerInputs[1]!, { target: { value: 'local' } })
-    fireEvent.click(screen.getByRole('button', { name: '你对 AI' }))
-    fireEvent.click(screen.getByRole('button', { name: 'AI 对 AI' }))
-    fireEvent.click(screen.getByRole('button', { name: '开始对局' }))
-    expect(second.actions.createMatch).toHaveBeenCalledWith(expect.objectContaining({
-      seats: [expect.objectContaining({ id: 'ai-1' }), expect.objectContaining({ id: 'ai-2' })],
-    }))
-  })
-
-  it('renders unavailable, loading, busy, and error setup states', () => {
-    const { rerender } = mount({ ...baseState, providers: [], rpsSetup: undefined })
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '没有可达的提供方' }).disabled).toBe(true)
-    rerender(<GameApp {...({
-      useGame: (select: (value: unknown) => unknown) => select({ ...baseState, rpsSetup: undefined }),
-      createMatch: vi.fn(), submitAction: vi.fn(), resetMatch: vi.fn(),
-    } as unknown as GameAppProps)} />)
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '正在加载游戏…' }).disabled).toBe(true)
-    rerender(<GameApp {...({
-      useGame: (select: (value: unknown) => unknown) => select({ ...baseState, busy: true, error: 'failed' }),
-      createMatch: vi.fn(), submitAction: vi.fn(), resetMatch: vi.fn(),
-    } as unknown as GameAppProps)} />)
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '正在开桌…' }).disabled).toBe(true)
-    expect(screen.getByRole('alert').textContent).toBe('failed')
-  })
-
-  it('submits choices and renders completed round history', () => {
-    const state = {
+describe('generic game product shell', () => {
+  it('renders contributed catalog items and durable match history', () => {
+    const bench = mount({
       ...baseState,
-      match: {
-        id: 'match', gameId: 'rps', revision: 4, status: 'active',
-        seats: [
-          { id: 'human', displayName: '你', controller: { type: 'human' } },
-          { id: 'ai-1', displayName: 'AI 一号', controller: { type: 'agent', provider: 'local', model: 'm' } },
-        ],
-        window: { id: 'window', requiredSeats: ['human', 'ai-1'], submittedSeats: ['ai-1'] },
-        blockedSeats: [],
-        game: {
-          scores: { human: 1, 'ai-1': 0 }, winner: null,
-          rounds: [
-            { number: 1, choices: { human: 'rock', 'ai-1': 'scissors' }, winner: 'human' },
-            { number: 2, choices: { human: 'paper', 'ai-1': 'paper' }, winner: null },
-          ],
-        },
-      },
+      matches: [
+        { id: 'active-123456', gameId: 'rps', revision: 1, status: 'active', seats: [], blockedSeats: [], game: null },
+        { id: 'blocked-1234', gameId: 'rps', revision: 1, status: 'blocked', seats: [], blockedSeats: [], game: null },
+        { id: 'finished-123', gameId: 'rps', revision: 1, status: 'finished', seats: [], blockedSeats: [], game: null },
+        { id: 'abandon-1234', gameId: 'rps', revision: 1, status: 'abandoned', seats: [], blockedSeats: [], game: null },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'TABLE FORGE' }))
+    expect(bench.selectGame).toHaveBeenCalledWith(undefined)
+    fireEvent.click(screen.getByRole('button', { name: '阿瓦隆目录卡' }))
+    expect(bench.selectGame).toHaveBeenCalledWith('avalon')
+    expect(screen.getByText(/进行中 · rps/)).toBeTruthy()
+    expect(screen.getByText(/需要处理 · rps/)).toBeTruthy()
+    expect(screen.getByText(/已结束 · rps/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /已完成 · rps/ }))
+    expect(bench.openMatch).toHaveBeenCalledWith('finished-123')
+    expect(bench.renderSlot).toHaveBeenCalledWith('game.catalog.item', expect.any(Object), expect.any(Object))
+  })
+
+  it('dispatches the selected game through the keyed surface', () => {
+    const bench = mount({ ...baseState, selectedGameId: 'avalon' })
+    expect(screen.getByText('界面：avalon')).toBeTruthy()
+    expect(bench.renderSlot).toHaveBeenCalledWith(
+      'game.surface', expect.objectContaining({ game: { id: 'avalon', configSchema: {} }, match: undefined }),
+      expect.objectContaining({ entryKey: 'avalon' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: /返回游戏列表/ }))
+    expect(bench.selectGame).toHaveBeenCalledWith(undefined)
+  })
+
+  it('uses the durable match game id and presents controller errors', () => {
+    const bench = mount({
+      ...baseState,
+      error: '连接失败',
+      match: { id: 'm', gameId: 'rps', revision: 1, status: 'active', seats: [], blockedSeats: [], game: null },
+    })
+    expect(screen.getByText('界面：rps')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe('连接失败')
+    fireEvent.click(screen.getByRole('button', { name: 'TABLE FORGE' }))
+    expect(bench.selectGame).not.toHaveBeenCalled()
+  })
+
+  it('owns explicit post-finish audit loading and the shared timeline outside game surfaces', () => {
+    const finished = {
+      id: 'finished', gameId: 'avalon', revision: 9, status: 'finished' as const,
+      seats: [{
+        id: 'assassin', displayName: '刺客玩家',
+        controller: { type: 'agent' as const, provider: 'p', model: 'm' },
+      }],
+      blockedSeats: [], game: {},
     }
-    const bench = mount(state)
-    fireEvent.click(screen.getByRole('button', { name: /石头/ }))
-    expect(bench.actions.submitAction).toHaveBeenCalledWith(expect.objectContaining({
-      matchId: 'match', windowId: 'window', action: { choice: 'rock' },
-    }))
-    expect(screen.getByText('你：石头')).toBeTruthy()
-    expect(screen.getByText('AI 一号：剪刀')).toBeTruthy()
-    expect(screen.getAllByText('你：布')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: '新对局' }))
-    expect(bench.actions.resetMatch).toHaveBeenCalledOnce()
+    const pending = mount({ ...baseState, match: finished })
+    fireEvent.click(screen.getByRole('button', { name: '载入 AI 审计记录' }))
+    expect(pending.loadAudit).toHaveBeenCalledOnce()
+    pending.unmount()
+
+    mount({
+      ...baseState,
+      match: finished,
+      audit: { entries: [{
+        seatId: 'assassin', actionType: 'assassinate', time: Date.UTC(2026, 7, 15, 8),
+        turn: 12, eventSeq: 40, kind: 'action', action: { type: 'assassinate', target: 'human' }, accepted: true,
+      }], unavailableSeatIds: [] },
+    })
+    expect(screen.getByText('AI 审计时间线（1 条）')).toBeTruthy()
+    expect(screen.getByText('刺客玩家')).toBeTruthy()
+    expect(screen.getByText('刺杀决策')).toBeTruthy()
+    expect(screen.getByText('刺杀目标：human')).toBeTruthy()
   })
 
-  it.each([
-    ['active', undefined, 'AI 正在选择；本轮结束前，所有已提交动作都会保持封存。'],
-    ['abandoned', undefined, '对局已结束'],
-    ['finished', null, '本场平局'],
-    ['finished', 'ai-1', 'AI 一号获胜'],
-  ])('renders the %s board outcome', (status, winner, expected) => {
-    mount({
+  it('requests notification permission from an explicit browser gesture and before match creation', async () => {
+    const requestPermission = vi.fn(() => Promise.resolve<NotificationPermission>('granted'))
+    vi.stubGlobal('Notification', {
+      permission: 'default' as NotificationPermission,
+      requestPermission,
+    })
+    const bench = mount({ ...baseState, selectedGameId: 'avalon' })
+    fireEvent.click(screen.getByRole('button', { name: '开启回合通知' }))
+    expect(requestPermission).toHaveBeenCalledOnce()
+    expect(await screen.findByText('回合通知已开启')).toBeTruthy()
+    bench.unmount()
+
+    requestPermission.mockClear()
+    const pendingPermission = new Promise<NotificationPermission>(() => undefined)
+    requestPermission.mockReturnValue(pendingPermission)
+    const creation = mount({ ...baseState, selectedGameId: 'avalon' })
+    const surfaceOwner = creation.renderSlot.mock.calls.find(call => call[0] === 'game.surface')?.[1] as {
+      createMatch: GameAppInjected['createMatch']
+    }
+    await surfaceOwner.createMatch({ gameId: 'avalon', config: {}, seats: [] })
+    expect(requestPermission).toHaveBeenCalledOnce()
+    expect(creation.createMatch).toHaveBeenCalledWith({ gameId: 'avalon', config: {}, seats: [] })
+  })
+
+  it('notifies one hidden-page human action window and focuses the game when clicked', () => {
+    const notifications: Array<{
+      title: string
+      options: NotificationOptions | undefined
+      onclick: (() => void) | null
+      close: ReturnType<typeof vi.fn>
+    }> = []
+    vi.stubGlobal('Notification', class {
+      static permission: NotificationPermission = 'granted'
+      static requestPermission = vi.fn(() => Promise.resolve<NotificationPermission>('granted'))
+      onclick: (() => void) | null = null
+      close = vi.fn()
+      readonly title: string
+      readonly options: NotificationOptions | undefined
+
+      constructor(title: string, options?: NotificationOptions) {
+        this.title = title
+        this.options = options
+        notifications.push(this)
+      }
+    })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
+    const waitingMatch: NonNullable<GameAppState['match']> = {
+      id: 'turn-match', gameId: 'avalon', revision: 1, status: 'active',
+      seats: [{ id: 'human', displayName: '你', controller: { type: 'human' } }],
+      window: { id: 'ai-window', requiredSeats: ['ai-1'], submittedSeats: [], canAct: false },
+      blockedSeats: [], game: {},
+    }
+    const bench = mount({ ...baseState, match: waitingMatch })
+    bench.updateState({
       ...baseState,
       match: {
-        id: 'match', gameId: 'rps', revision: 5, status,
-        seats: [{ id: 'ai-1', displayName: 'AI 一号', controller: { type: 'agent', provider: 'local', model: 'm' } }],
-        blockedSeats: [],
-        game: { scores: {}, rounds: [{ number: 1, choices: {}, winner: null }], winner },
+        ...waitingMatch, revision: 2,
+        window: { id: 'human-window', requiredSeats: ['human'], submittedSeats: [], canAct: true },
       },
     })
-    expect(screen.getByText(expected)).toBeTruthy()
-    expect(screen.getByText('AI 一号：—')).toBeTruthy()
-  })
-
-  it('uses neutral winner labels when a persisted seat is unavailable', () => {
-    mount({
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]).toMatchObject({
+      title: '轮到你操作了',
+      options: { body: '返回 Table Forge 完成当前操作。', tag: 'table-forge-turn-turn-match' },
+    })
+    bench.updateState({
       ...baseState,
       match: {
-        id: 'match', gameId: 'rps', revision: 5, status: 'finished', seats: [], blockedSeats: [],
-        game: { scores: {}, rounds: [{ number: 1, choices: {}, winner: 'removed' }], winner: 'removed' },
+        ...waitingMatch, revision: 3,
+        window: { id: 'human-window', requiredSeats: ['human'], submittedSeats: [], canAct: true },
       },
     })
-    expect(screen.getByText('胜者获胜')).toBeTruthy()
-    expect(screen.getByText('胜者胜')).toBeTruthy()
-  })
-
-  it('renders a terminal board before optional game details arrive', () => {
-    mount({
-      ...baseState,
-      match: { id: 'match', gameId: 'rps', revision: 1, status: 'abandoned', seats: [], blockedSeats: [], game: null },
-    })
-    expect(screen.getByText('对局已结束')).toBeTruthy()
+    expect(notifications).toHaveLength(1)
+    notifications[0]!.onclick?.()
+    expect(focus).toHaveBeenCalledOnce()
+    expect(notifications[0]!.close).toHaveBeenCalledOnce()
   })
 })

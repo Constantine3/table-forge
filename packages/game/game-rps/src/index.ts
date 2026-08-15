@@ -58,12 +58,6 @@ export function createRpsDefinition(config: Required<Config>): GameDefinition<Rp
       required: ['roundCount'],
       properties: { roundCount: { type: 'integer', minimum: 1, maximum: config.maxRounds, default: config.defaultRounds } },
     },
-    actionSchema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['choice'],
-      properties: { choice: { type: 'string', enum: ['rock', 'paper', 'scissors'] } },
-    },
     validateConfig(value): GameJson {
       const candidate = value === undefined || value === null ? { roundCount: config.defaultRounds } : value
       if (typeof candidate !== 'object' || Array.isArray(candidate)) throw new Error('RPS config must be an object')
@@ -72,12 +66,6 @@ export function createRpsDefinition(config: Required<Config>): GameDefinition<Rp
         throw new Error(`RPS roundCount must be an integer from 1 through ${config.maxRounds}`)
       }
       return { roundCount: roundCount as number }
-    },
-    validateAction(value): GameJson {
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('RPS action must be an object')
-      const choice = (value as { choice?: unknown }).choice
-      if (!isChoice(choice)) throw new Error("RPS choice must be 'rock', 'paper', or 'scissors'")
-      return { choice }
     },
     initial({ config: gameConfig, seats }): readonly GameRuleEvent[] {
       if (seats.length !== 2) throw new Error('RPS requires exactly two seats')
@@ -96,7 +84,26 @@ export function createRpsDefinition(config: Required<Config>): GameDefinition<Rp
       return { ...state, rounds: [...state.rounds, round], scores }
     },
     pending(state) {
-      return state.rounds.length === state.roundCount ? undefined : { key: `round-${state.rounds.length + 1}`, requiredSeats: state.seats }
+      return state.rounds.length === state.roundCount
+        ? undefined
+        : { key: `round-${state.rounds.length + 1}`, requiredSeats: state.seats, audience: 'public' }
+    },
+    action() {
+      return {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['choice'],
+          properties: { choice: { type: 'string', enum: ['rock', 'paper', 'scissors'] } },
+        },
+        validate(value): GameJson {
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('RPS action must be an object')
+          if (Object.keys(value).length !== 1 || !Object.hasOwn(value, 'choice')) throw new Error('RPS action has unexpected fields')
+          const choice = (value as { choice?: unknown }).choice
+          if (!isChoice(choice)) throw new Error("RPS choice must be 'rock', 'paper', or 'scissors'")
+          return { choice }
+        },
+      }
     },
     resolve({ state, actions }): readonly GameRuleEvent[] {
       const left = (actions.get(state.seats[0]) as { choice: RpsChoice } | undefined)?.choice
@@ -124,7 +131,7 @@ export function createRpsDefinition(config: Required<Config>): GameDefinition<Rp
     },
     modelPrompt(state, seat): string {
       const view = this.view(state, seat)
-      return `You are seat ${seat} in rock-paper-scissors. Choose exactly one of rock, paper, or scissors for each round. The rules engine is authoritative. Current observation: ${JSON.stringify(view)}`
+      return `你是剪刀石头布对局中的席位 ${seat}。每局必须在 rock、paper、scissors 中选择一个动作。你的所有思考、分析和自然语言输出必须使用简体中文；JSON 属性名和枚举值必须严格遵循动作 schema。规则引擎拥有最终裁决权。当前观察：${JSON.stringify(view)}`
     },
   }
 }

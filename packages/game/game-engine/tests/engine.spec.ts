@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import GameDefinitions, {
-  ActionWindowId, GameCommandId, GameControllerRegistry, MatchId, SeatId,
+  ActionWindowId, GameCommandId, GameControllerRegistry, MATCH_FORMAT_VERSION, MatchId, SeatId,
   type GameDefinition, type GameJson, type GameRuleEvent, type MatchEvent, type MatchRecord,
 } from '@deepseek-ai/dsh-game'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,12 +15,7 @@ const definition: GameDefinition<State> = {
   id: 'simultaneous',
   rulesVersion: 1,
   configSchema: { type: 'object' },
-  actionSchema: { type: 'string' },
   validateConfig: () => ({}),
-  validateAction(value): GameJson {
-    if (typeof value !== 'string') throw new Error('action must be a string')
-    return value
-  },
   initial({ seats }): readonly GameRuleEvent[] {
     return [{ type: 'started', data: { seats: seats.map(seat => seat.id) } }]
   },
@@ -29,7 +24,14 @@ const definition: GameDefinition<State> = {
     if (state === undefined || event.type !== 'resolved') throw new Error(`invalid event '${event.type}'`)
     return { ...state, choices: event.data as Readonly<Record<string, string>> }
   },
-  pending: state => state.choices === undefined ? { key: 'choice', requiredSeats: state.seats } : undefined,
+  pending: state => state.choices === undefined ? { key: 'choice', requiredSeats: state.seats, audience: 'public' } : undefined,
+  action: () => ({
+    schema: { type: 'string' },
+    validate(value): GameJson {
+      if (typeof value !== 'string') throw new Error('action must be a string')
+      return value
+    },
+  }),
   resolve({ actions }): readonly GameRuleEvent[] {
     return [{ type: 'resolved', data: Object.fromEntries(actions) }]
   },
@@ -93,28 +95,105 @@ describe('game engine transactions', () => {
     await ctx.fiber.dispose()
   })
 
+  it('compares idempotent JSON structurally and rejects non-lossless action input', async () => {
+    const { ctx, engine } = await mounted()
+    const jsonDefinition: GameDefinition<{ readonly seat: SeatId; readonly done: boolean }> = {
+      id: 'json', rulesVersion: 1, configSchema: {}, validateConfig: () => ({}),
+      initial: ({ seats: initialSeats }) => [{ type: 'json-started', data: { seat: initialSeats[0]!.id } }],
+      reduce: (state, event) => event.type === 'json-started'
+        ? { seat: (event.data as { seat: SeatId }).seat, done: false }
+        : { ...state!, done: true },
+      pending: state => state.done ? undefined : { key: 'json', requiredSeats: [state.seat], audience: 'public' },
+      action: () => ({ schema: {}, validate: value => value as GameJson }),
+      resolve: () => [{ type: 'json-done', data: null }], view: state => state, modelPrompt: () => '',
+    }
+    ctx.gameDefinitions.register(jsonDefinition)
+
+    const objectMatch = await engine.create({ gameId: 'json', config: {}, seats: [seats[0]] })
+    const objectRequest = {
+      matchId: objectMatch.id, windowId: objectMatch.window!.id, commandId: GameCommandId('object'),
+      seatId: seats[0].id, action: { first: [1, true], second: 'value' },
+    }
+    const committed = await engine.submit(objectRequest)
+    await expect(engine.submit({ ...objectRequest, action: { second: 'value', first: [1, true] } })).resolves.toEqual(committed)
+    await expect(engine.submit({ ...objectRequest, action: { second: 'value', first: [1] } })).rejects.toThrow(/different input/)
+    await expect(engine.submit({ ...objectRequest, action: { third: 'value', first: [1, true] } })).rejects.toThrow(/different input/)
+    await expect(engine.submit({ ...objectRequest, action: [] })).rejects.toThrow(/different input/)
+    await expect(engine.submit({ ...objectRequest, action: null })).rejects.toThrow(/different input/)
+
+    const nullMatch = await engine.create({ gameId: 'json', config: {}, seats: [seats[0]] })
+    const nullRequest = {
+      matchId: nullMatch.id, windowId: nullMatch.window!.id, commandId: GameCommandId('null'),
+      seatId: seats[0].id, action: null,
+    }
+    await engine.submit(nullRequest)
+    await expect(engine.submit(nullRequest)).resolves.toMatchObject({ status: 'finished' })
+    await expect(engine.submit({ ...nullRequest, action: {} })).rejects.toThrow(/different input/)
+
+    const invalid = await engine.create({ gameId: definition.id, config: {}, seats })
+    for (const [index, [action, error]] of [
+      [null, /action must be a string/], [7, /action must be a string/], [['rock'], /action must be a string/],
+      [Number.NaN, /lossless JSON/], [undefined, /lossless JSON/], [{ value: undefined }, /lossless JSON/],
+    ].entries()) {
+      await expect(engine.submit({
+        matchId: invalid.id, windowId: invalid.window!.id, commandId: GameCommandId(`invalid-${index}`),
+        seatId: seats[0].id, action,
+      })).rejects.toThrow(error)
+    }
+    await ctx.fiber.dispose()
+  })
+
   it('rejects unsupported rules and malformed persisted event streams', async () => {
     const { ctx, engine, persistence } = await mounted()
     const unsupported = MatchId('unsupported')
     await persistence.create({
-      id: unsupported, formatVersion: 0, gameId: definition.id, rulesVersion: 2,
+      id: unsupported, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 2,
       config: {}, seats, createdAt: 1, events: [{ seq: 0, time: 1, type: 'match/rule', data: { ruleType: 'started', ruleData: { seats: ['human', 'ai'] } } }],
     })
     await expect(engine.get(unsupported)).rejects.toThrow(/unsupported rules version/)
+    await expect(engine.remoteGet(unsupported)).resolves.toBeUndefined()
+
+    const oldFormat = MatchId('old-format')
+    await persistence.create({
+      id: oldFormat, formatVersion: 0, gameId: definition.id, rulesVersion: 1,
+      config: {}, seats, createdAt: 1, events: [],
+    })
+    await expect(engine.get(oldFormat)).rejects.toThrow(/unsupported format 0/)
 
     const corrupt = MatchId('corrupt')
     await persistence.create({
-      id: corrupt, formatVersion: 0, gameId: definition.id, rulesVersion: 1,
+      id: corrupt, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 1,
       config: {}, seats, createdAt: 1, events: [{ seq: 0, time: 1, type: 'match/action-submitted', data: { windowId: ActionWindowId('missing'), commandId: 'x', seatId: 'human', action: 'rock' } }],
     })
     await expect(engine.get(corrupt)).rejects.toThrow(/corrupt match submission window/)
+    await expect(engine.remoteGet(corrupt)).rejects.toThrow(/corrupt match submission window/)
+    await expect(engine.list()).rejects.toThrow(/corrupt match submission window/)
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps unsupported match and rules formats out of product listing and restore', async () => {
+    const { ctx, engine, persistence } = await mounted()
+    const legacy = MatchId('legacy')
+    await persistence.create({
+      id: legacy, formatVersion: 0, gameId: definition.id, rulesVersion: 1,
+      config: {}, seats, createdAt: 1, events: [],
+    })
+    const oldRules = MatchId('old-rules')
+    await persistence.create({
+      id: oldRules, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 2,
+      config: {}, seats, createdAt: 2, events: [],
+    })
+    const current = await engine.create({ gameId: definition.id, config: {}, seats })
+    await expect(engine.remoteGet(legacy)).resolves.toBeUndefined()
+    await expect(engine.remoteGet(oldRules)).resolves.toBeUndefined()
+    await expect(engine.list()).resolves.toEqual([expect.objectContaining({ id: current.id })])
     await ctx.fiber.dispose()
   })
 
   it('enforces in-memory persistence creation and append invariants', async () => {
     const persistence = new MemoryGamePersistence()
     const base: MatchRecord = {
-      id: MatchId('memory'), formatVersion: 0, gameId: 'test', rulesVersion: 1,
+      id: MatchId('memory'), formatVersion: MATCH_FORMAT_VERSION, gameId: 'test', rulesVersion: 1,
       config: {}, seats: [], createdAt: 1, events: [],
     }
     await persistence.create(base)
@@ -146,8 +225,8 @@ describe('game engine transactions', () => {
   it('supports completed-at-creation games, missing reads, and stable listing', async () => {
     const { ctx, engine } = await mounted()
     const complete: GameDefinition<null> = {
-      id: 'complete', rulesVersion: 1, configSchema: {}, actionSchema: {},
-      validateConfig: () => null, validateAction: () => null,
+      id: 'complete', rulesVersion: 1, configSchema: {},
+      validateConfig: () => null, action: () => ({ schema: {}, validate: () => null }),
       initial: () => [{ type: 'done', data: null }], reduce: () => null,
       pending: () => undefined, resolve: () => [], view: () => ({ done: true }), modelPrompt: () => '',
     }
@@ -177,6 +256,19 @@ describe('game engine transactions', () => {
       matchId: created.id, windowId, commandId: GameCommandId('outsider'),
       seatId: SeatId('outsider'), action: 'rock',
     })).rejects.toThrow(/not actionable/)
+    const ghostDefinition: GameDefinition<State> = {
+      ...definition,
+      id: 'ghost',
+      pending: state => state.choices === undefined
+        ? { key: 'choice', requiredSeats: [SeatId('ghost')], audience: 'public' }
+        : undefined,
+    }
+    ctx.gameDefinitions.register(ghostDefinition)
+    const ghost = await engine.create({ gameId: ghostDefinition.id, config: {}, seats })
+    await expect(engine.submit({
+      matchId: ghost.id, windowId: ghost.window!.id, commandId: GameCommandId('ghost'),
+      seatId: SeatId('ghost'), action: 'rock',
+    })).rejects.toThrow(/not part of the match/)
     await engine.submit({ matchId: created.id, windowId, commandId: GameCommandId('first'), seatId: seats[0].id, action: 'rock' })
     await expect(engine.submit({
       matchId: created.id, windowId, commandId: GameCommandId('duplicate'),
@@ -196,8 +288,8 @@ describe('game engine transactions', () => {
     const abandoned = await engine.abandon(active.id)
     await expect(engine.abandon(active.id)).resolves.toEqual(abandoned)
     const complete: GameDefinition<null> = {
-      id: 'complete-abandon', rulesVersion: 1, configSchema: {}, actionSchema: {},
-      validateConfig: () => null, validateAction: () => null,
+      id: 'complete-abandon', rulesVersion: 1, configSchema: {},
+      validateConfig: () => null, action: () => ({ schema: {}, validate: () => null }),
       initial: () => [{ type: 'done', data: null }], reduce: () => null,
       pending: () => undefined, resolve: () => [], view: () => null, modelPrompt: () => '',
     }
@@ -218,6 +310,9 @@ describe('game engine transactions', () => {
       ],
     })
     expect(availability).toHaveBeenCalledOnce()
+    await expect(engine.remoteProviderAvailability([{ provider: 'p', model: 'm' }])).resolves.toEqual([
+      { provider: 'p', model: 'm', available: true },
+    ])
     expect(engine.remoteCatalog()).toEqual([{ id: definition.id, configSchema: definition.configSchema }])
     expect(await engine.remoteGet(created.id)).toEqual(await engine.get(MatchId(created.id), SeatId('human')))
     expect(await engine.remoteGet('missing')).toBeUndefined()
@@ -231,6 +326,11 @@ describe('game engine transactions', () => {
       matchId: botsOnly.id, windowId: botsOnly.window!.id,
       commandId: 'invalid-human-command', action: 'rock',
     })).rejects.toThrow(/no human-controlled seat/)
+    await expect(engine.remoteCreate({
+      gameId: definition.id, config: {}, seats: [
+        { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'p', model: 'm' } },
+      ],
+    })).resolves.toMatchObject({ status: 'active', window: { canAct: false } })
     await expect(engine.remoteAbandon(created.id)).resolves.toMatchObject({ status: 'abandoned' })
     availability.mockResolvedValueOnce({ available: false, message: 'LAN route unavailable' })
     await expect(engine.remoteCreate({
@@ -238,17 +338,24 @@ describe('game engine transactions', () => {
         { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'lan', model: 'm' } },
       ],
     })).rejects.toThrow('LAN route unavailable')
+    availability.mockResolvedValueOnce({ available: false })
+    await expect(engine.remoteCreate({
+      gameId: definition.id, config: {}, seats: [
+        { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'offline', model: 'm' } },
+      ],
+    })).rejects.toThrow("provider 'offline' is unavailable")
     await ctx.fiber.dispose()
   })
 
   it('opens the next action window when resolution leaves work pending', async () => {
     const { ctx, engine } = await mounted()
     const repeated: GameDefinition<number> = {
-      id: 'repeated', rulesVersion: 1, configSchema: {}, actionSchema: {},
-      validateConfig: () => 0, validateAction: value => typeof value === 'string' ? value : null,
+      id: 'repeated', rulesVersion: 1, configSchema: {},
+      validateConfig: () => 0,
       initial: () => [{ type: 'counted', data: 0 }],
       reduce: (_state, event) => event.data as number,
-      pending: count => count < 2 ? { key: 'choice', requiredSeats: [seats[0].id] } : undefined,
+      pending: count => count < 2 ? { key: 'choice', requiredSeats: [seats[0].id], audience: 'public' } : undefined,
+      action: () => ({ schema: {}, validate: value => typeof value === 'string' ? value : null }),
       resolve: ({ state }) => [{ type: 'counted', data: state + 1 }],
       view: state => state, modelPrompt: () => 'Choose.',
     }
@@ -284,10 +391,24 @@ describe('game engine transactions', () => {
 
     await internals.resumeControllers('agent')
     expect(drive).toHaveBeenCalledOnce()
-    await expect(engine.retry(created.id, seats[1].id)).resolves.toMatchObject({ status: 'active', blockedSeats: [] })
+    await expect(engine.retry(created.id, seats[0].id)).rejects.toThrow(/not blocked/)
+    await expect(engine.remoteRetry(created.id)).resolves.toMatchObject({ status: 'active', blockedSeats: [] })
     await Promise.allSettled([...internals.controllerTasks])
     expect(drive).toHaveBeenCalledTimes(2)
     await expect(engine.get(created.id)).resolves.toMatchObject({ status: 'blocked' })
+    await expect(engine.retry(created.id, seats[1].id)).resolves.toMatchObject({ status: 'active', blockedSeats: [] })
+    await Promise.allSettled([...internals.controllerTasks])
+    expect(drive).toHaveBeenCalledTimes(3)
+    await engine.abandon(created.id)
+    await expect(engine.retry(created.id, seats[1].id)).rejects.toThrow(/no active action window/)
+    await expect(engine.remoteRetry(created.id)).rejects.toThrow(/no active action window/)
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects remote retry when no controller is blocked', async () => {
+    const { ctx, engine } = await mounted()
+    const created = await engine.create({ gameId: definition.id, config: {}, seats })
+    await expect(engine.remoteRetry(created.id)).rejects.toThrow(/no blocked controller/)
     await ctx.fiber.dispose()
   })
 
@@ -302,10 +423,10 @@ describe('game engine transactions', () => {
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const id = MatchId('recovery')
     await persistence.create({
-      id, formatVersion: 0, gameId: definition.id, rulesVersion: 1, config: {}, seats,
+      id, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 1, config: {}, seats,
       createdAt: 1, events: [
         { seq: 0, time: 1, type: 'match/rule', data: { ruleType: 'started', ruleData: { seats: ['human', 'ai'] } } },
-        { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'recovery-window', key: 'choice', requiredSeats: ['human', 'ai'] } },
+        { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'recovery-window', key: 'choice', requiredSeats: ['human', 'ai'], audience: 'public' } },
       ],
     })
     await persistence.create({
@@ -343,12 +464,36 @@ describe('game engine transactions', () => {
     await ctx.fiber.dispose()
   })
 
+  it('reports Error and non-Error failures while persisting controller blocks', async () => {
+    const { ctx, engine, persistence } = await mounted()
+    const created = await engine.create({ gameId: definition.id, config: {}, seats })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    const originalAppend = persistence.append.bind(persistence)
+    const internals = engine as unknown as {
+      controllerTasks: Set<Promise<void>>
+      trackController: (matchId: MatchId, task: Promise<void>, seatId: SeatId, windowId: ActionWindowId) => void
+    }
+    persistence.append = () => Promise.reject(new Error('append error'))
+    internals.trackController(created.id, Promise.reject(new Error('controller error')), seats[1].id, created.window!.id)
+    await Promise.allSettled([...internals.controllerTasks])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('append error'))
+
+    const appendFailure: unknown = 'append string'
+    persistence.append = () => rejected(appendFailure)
+    const controllerFailure: unknown = 'controller string'
+    internals.trackController(created.id, rejected(controllerFailure), seats[1].id, created.window!.id)
+    await Promise.allSettled([...internals.controllerTasks])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('append string'))
+    persistence.append = originalAppend
+    await ctx.fiber.dispose()
+  })
+
   it('filters targeted recovery and isolates teardown races', async () => {
     vi.useFakeTimers()
     const { ctx, engine, persistence } = await mounted()
     const id = MatchId('recovery-filters')
     await persistence.create({
-      id, formatVersion: 0, gameId: definition.id, rulesVersion: 1, config: {}, seats,
+      id, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 1, config: {}, seats,
       createdAt: 1, events: [
         { seq: 0, time: 1, type: 'match/rule', data: { ruleType: 'started', ruleData: { seats: ['human', 'ai'] } } },
         { seq: 1, time: 1, type: 'unknown' as MatchEvent['type'], data: {} },
@@ -388,12 +533,16 @@ describe('game engine transactions', () => {
     const cases: Array<[string, MatchEvent, RegExp]> = [
       ['scalar', { seq: 0, time: 1, type: 'match/rule', data: null }, /event data/],
       ['rule-type', { seq: 0, time: 1, type: 'match/rule', data: { ruleType: '', ruleData: null } }, /ruleType/],
-      ['required', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: 'k', requiredSeats: null } }, /requiredSeats/],
-      ['window-id', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: '', key: 'k', requiredSeats: [] } }, /windowId/],
-      ['key', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: '', requiredSeats: [] } }, /key/],
-      ['required-seat', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: 'k', requiredSeats: [''] } }, /requiredSeats/],
+      ['required', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: 'k', requiredSeats: null, audience: 'public' } }, /requiredSeats/],
+      ['audience', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: 'k', requiredSeats: [], audience: 'all' } }, /audience/],
+      ['window-id', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: '', key: 'k', requiredSeats: [], audience: 'public' } }, /windowId/],
+      ['key', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: '', requiredSeats: [], audience: 'public' } }, /key/],
+      ['required-seat', { seq: 1, time: 1, type: 'match/action-opened', data: { windowId: 'w', key: 'k', requiredSeats: [''], audience: 'public' } }, /requiredSeats/],
       ['seat', { seq: 2, time: 1, type: 'match/action-submitted', data: { windowId: 'w', seatId: '', commandId: 'c' } }, /seatId/],
-      ['command', { seq: 2, time: 1, type: 'match/action-submitted', data: { windowId: 'w', seatId: 's', commandId: '' } }, /commandId/],
+      ['command', { seq: 2, time: 1, type: 'match/action-submitted', data: { windowId: 'w', seatId: 's', commandId: '', input: null, action: null } }, /commandId/],
+      ['input', { seq: 2, time: 1, type: 'match/action-submitted', data: { windowId: 'w', seatId: 's', commandId: 'c', action: null } }, /input/],
+      ['blocked-window', { seq: 2, time: 1, type: 'match/controller-blocked', data: { windowId: 'other', seatId: 's', message: 'error' } }, /controller failure window/],
+      ['retried-window', { seq: 2, time: 1, type: 'match/controller-retried', data: { windowId: 'other', seatId: 's' } }, /controller retry window/],
     ]
     const started: MatchEvent = {
       seq: 0, time: 1, type: 'match/rule',
@@ -402,18 +551,18 @@ describe('game engine transactions', () => {
     for (const [id, event, error] of cases) {
       const opened: MatchEvent = {
         seq: 1, time: 1, type: 'match/action-opened',
-        data: { windowId: 'w', key: 'choice', requiredSeats: ['human', 'ai'] },
+        data: { windowId: 'w', key: 'choice', requiredSeats: ['human', 'ai'], audience: 'public' },
       }
       const events = event.seq === 0 ? [event] : event.seq === 1 ? [started, event] : [started, opened, event]
       await persistence.create({
-        id: MatchId(id), formatVersion: 0, gameId: definition.id, rulesVersion: 1,
+        id: MatchId(id), formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 1,
         config: {}, seats, createdAt: 1, events,
       })
       await expect(engine.get(MatchId(id))).rejects.toThrow(error)
     }
     const noStart = MatchId('no-start')
     await persistence.create({
-      id: noStart, formatVersion: 0, gameId: definition.id, rulesVersion: 1,
+      id: noStart, formatVersion: MATCH_FORMAT_VERSION, gameId: definition.id, rulesVersion: 1,
       config: {}, seats, createdAt: 1,
       events: [{ seq: 0, time: 1, type: 'match/abandoned', data: {} }],
     })

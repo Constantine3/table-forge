@@ -54,7 +54,7 @@
 - id: system-prompt
   config:
     persona: >-
-      You are an AI player inside Table Forge. Follow the active game's rules and submit only actions available to your seat.
+      你是 Table Forge 中的一名 AI 玩家。遵守当前游戏规则，只提交你的席位可用的动作。所有思考、分析和自然语言输出必须使用简体中文。
 
 # The game product owns the root slot. The generic coding shell remains
 # available as reusable infrastructure but is not mounted into this profile.
@@ -165,17 +165,35 @@
         defaultRounds: 3
         maxRounds: 20
 
+    - id: game-avalon
+      name: '@deepseek-ai/dsh-game-avalon'
+      inject: [gameDefinitions]
+      config:
+        maxStatementChars: 280
+
     - id: game-controller-agent
       name: '@deepseek-ai/dsh-game-controller-agent'
       inject: [agents, gameControllers, llm, matches, sessionPersistence, systemPrompt, tools]
       config:
         maxAttemptsPerAction: 2
+        maxTokensPerRequest: 16384
+        timeoutRetryReasoningEfforts:
+          deepseek-self-deployment:
+            deepseek-v4-flash-vision: high
+          hy3-tokenhub:
+            hy3: low
         providerProbes:
           deepseek-self-deployment:
             endpoint: http://127.0.0.1:4100/v1
             timeoutMs: 1500
         playerInstruction: >-
-          The rules engine is authoritative. Never claim an action was accepted unless submit_game_action succeeds. Before every action, use the strongest available reasoning and explicitly analyze the current observation, prior rounds, score and objective, uncertainty and hidden information, opponent tendencies, candidate actions, risks, and likely counterplay. Never invent information your seat cannot observe. Complete this analysis in reasoning before calling submit_game_action, then submit the action you judge most likely to advance your objective.
+          规则引擎拥有最终裁决权。只有 submit_game_action 成功后才能声称动作已被接受。每次行动前必须使用最强可用推理，明确分析当前观察、历史回合、比分与目标、不确定性与隐藏信息、对手倾向、候选动作、风险和可能的反制。所有思维链、分析、最终回答和公开发言必须使用简体中文；不得使用英文书写自然语言，但 JSON 属性名、动作类型、枚举值和席位 id 必须严格遵循动作 schema。不得编造本席位无法观察的信息，也不得在公开发言中泄露私有身份或私有知识。调用 submit_game_action 前先在推理中完成分析，再提交最有可能推进自身目标的动作。
 
     - id: ui-game
       name: '@deepseek-ai/dsh-client-ui-game'
+
+    - id: ui-game-rps
+      name: '@deepseek-ai/dsh-client-ui-game-rps'
+
+    - id: ui-game-avalon
+      name: '@deepseek-ai/dsh-client-ui-game-avalon'

@@ -1,6 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import GameDefinitions, { ActionWindowId, GameCommandId, GameControllerRegistry, MatchId, SeatId } from '@deepseek-ai/dsh-game'
+import GameDefinitions, {
+  ActionWindowId, GameCommandId, GameControllerRegistry, MATCH_FORMAT_VERSION, MatchId, SeatId,
+} from '@deepseek-ai/dsh-game'
 import GameEngine, { MemoryGamePersistence } from '@deepseek-ai/dsh-game-engine'
 import * as Rps from '../src/index.ts'
 import { createRpsDefinition } from '../src/index.ts'
@@ -18,6 +20,7 @@ describe('RPS definition', () => {
             { id: SeatId('left'), displayName: 'Left', controller: { type: 'human' } },
             { id: SeatId('right'), displayName: 'Right', controller: { type: 'agent', provider: 'test', model: 'test' } },
           ],
+          randomSeed: 'rps-test',
         })
         const state = definition.reduce(undefined, started[0]!)
         const [event] = definition.resolve({
@@ -37,7 +40,10 @@ describe('RPS definition', () => {
   it('rejects an invalid round count and action', () => {
     const definition = createRpsDefinition({ defaultRounds: 3, maxRounds: 20 })
     expect(() => definition.validateConfig({ roundCount: 0 })).toThrow(/1 through 20/)
-    expect(() => definition.validateAction({ choice: 'fire' })).toThrow(/rock.*paper.*scissors/)
+    const seat = { id: SeatId('left'), displayName: 'Left', controller: { type: 'human' as const } }
+    const state = definition.reduce(undefined, { type: 'rps/started', data: { roundCount: 1, seats: ['left', 'right'] } })
+    expect(() => definition.action({ state, window: definition.pending(state)!, seat }).validate({ choice: 'fire' }))
+      .toThrow(/rock.*paper.*scissors/)
   })
 
   it('validates every configuration and action representation', () => {
@@ -47,7 +53,12 @@ describe('RPS definition', () => {
     for (const invalid of [false, [], { roundCount: 1.5 }, { roundCount: 21 }]) {
       expect(() => definition.validateConfig(invalid)).toThrow()
     }
-    for (const invalid of [null, [], 'rock']) expect(() => definition.validateAction(invalid)).toThrow(/object/)
+    const seat = { id: SeatId('left'), displayName: 'Left', controller: { type: 'human' as const } }
+    const state = definition.reduce(undefined, { type: 'rps/started', data: { roundCount: 1, seats: ['left', 'right'] } })
+    const action = definition.action({ state, window: definition.pending(state)!, seat })
+    for (const invalid of [null, [], 'rock']) expect(() => action.validate(invalid)).toThrow(/object/)
+    expect(() => action.validate({ choice: 'rock', explanation: 'extra' })).toThrow(/unexpected fields/)
+    expect(() => action.validate({})).toThrow(/unexpected fields/)
     expect(() => createRpsDefinition({ defaultRounds: 2, maxRounds: 1 })).toThrow(/must not exceed/)
   })
 
@@ -61,6 +72,7 @@ describe('RPS definition', () => {
         { id: SeatId('left'), displayName: 'Left', controller: { type: 'human' } },
         { id: SeatId('right'), displayName: 'Right', controller: { type: 'human' } },
       ],
+      randomSeed: 'rps-test',
     })
     const state = definition.reduce(undefined, started!)
     expect(() => definition.resolve({ state, window: definition.pending(state)!, actions: new Map() })).toThrow(/both choices/)
@@ -79,7 +91,8 @@ describe('RPS definition', () => {
       expect((definition.view(complete) as { winner: unknown }).winner).toBe(expected)
       expect(definition.pending(complete)).toBeUndefined()
     }
-    expect(definition.modelPrompt(started, seats[0])).toContain('Current observation:')
+    expect(definition.modelPrompt(started, seats[0])).toContain('所有思考、分析和自然语言输出必须使用简体中文')
+    expect(definition.modelPrompt(started, seats[0])).toContain('当前观察：')
 
     const missingScores = { ...started, scores: {} }
     expect((definition.view(missingScores) as { winner: unknown }).winner).toBeNull()
@@ -309,7 +322,7 @@ describe('RPS match', () => {
     })
     await persistence.create({
       id: matchId,
-      formatVersion: 0,
+      formatVersion: MATCH_FORMAT_VERSION,
       gameId: definition.id,
       rulesVersion: definition.rulesVersion,
       config: { roundCount: 1 },
@@ -320,7 +333,7 @@ describe('RPS match', () => {
       createdAt: 1,
       events: [
         { seq: 0, time: 1, type: 'match/rule', data: { ruleType: 'rps/started', ruleData: { roundCount: 1, seats: [person, bot] } } },
-        { seq: 1, time: 1, type: 'match/action-opened', data: { windowId, key: 'round-1', requiredSeats: [person, bot] } },
+        { seq: 1, time: 1, type: 'match/action-opened', data: { windowId, key: 'round-1', requiredSeats: [person, bot], audience: 'public' } },
       ],
     })
     await ctx.plugin(GameEngine)
@@ -336,21 +349,21 @@ describe('RPS match', () => {
     await ctx.plugin(GameControllerRegistry)
     await ctx.plugin(inner => inner.provide('gamePersistence', persistence))
     await persistence.create({
-      id: MatchId('unknown'), formatVersion: 0, gameId: 'removed', rulesVersion: 1, config: {},
+      id: MatchId('unknown'), formatVersion: MATCH_FORMAT_VERSION, gameId: 'removed', rulesVersion: 1, config: {},
       seats: [{ id: SeatId('bot'), displayName: 'Bot', controller: { type: 'agent', provider: 'x', model: 'y' } }],
       createdAt: 1, events: [],
     })
     const matchId = MatchId('known')
     const windowId = ActionWindowId('known:window:1')
     await persistence.create({
-      id: matchId, formatVersion: 0, gameId: 'rps', rulesVersion: 1, config: { roundCount: 1 },
+      id: matchId, formatVersion: MATCH_FORMAT_VERSION, gameId: 'rps', rulesVersion: 1, config: { roundCount: 1 },
       seats: [
         { id: SeatId('person'), displayName: 'Person', controller: { type: 'human' } },
         { id: SeatId('bot'), displayName: 'Bot', controller: { type: 'agent', provider: 'x', model: 'y' } },
       ], createdAt: 2,
       events: [
         { seq: 0, time: 1, type: 'match/rule', data: { ruleType: 'rps/started', ruleData: { roundCount: 1, seats: ['person', 'bot'] } } },
-        { seq: 1, time: 1, type: 'match/action-opened', data: { windowId, key: 'round-1', requiredSeats: ['person', 'bot'] } },
+        { seq: 1, time: 1, type: 'match/action-opened', data: { windowId, key: 'round-1', requiredSeats: ['person', 'bot'], audience: 'public' } },
       ],
     })
     ctx.gameDefinitions.register(definition)

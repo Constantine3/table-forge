@@ -1,8 +1,11 @@
 - main:
-  - text: TABLE FORGE LLM 原生游戏引擎
-  - paragraph: 首个游戏
+  - button "TABLE FORGE"
+  - text: LLM 原生游戏引擎
+  - button "开启回合通知"
+  - button "← 返回游戏列表"
+  - paragraph: 经典同时行动
   - heading "剪刀 · 石头 · 布" [level=1]
-  - paragraph: 配置牌桌与 AI 席位；模型只负责决策，确定性的规则引擎负责裁定。
+  - paragraph: 每轮动作会封存到两边都已选择，再由规则引擎同时揭晓。
   - button "你对 AI"
   - button "AI 对 AI"
   - text: 总局数

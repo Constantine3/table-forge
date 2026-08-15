@@ -7,8 +7,8 @@ import GameDefinitions, {
 } from '../src/index.ts'
 
 const definition = (id: string): GameDefinition => ({
-  id, rulesVersion: 1, configSchema: {}, actionSchema: {},
-  validateConfig: () => null, validateAction: () => null, initial: () => [],
+  id, rulesVersion: 1, configSchema: {},
+  validateConfig: () => null, action: () => ({ schema: {}, validate: () => null }), initial: () => [],
   reduce: () => null, pending: () => undefined, resolve: () => [], view: () => null,
   modelPrompt: () => '',
 })
@@ -36,8 +36,8 @@ describe('game registries', () => {
     const ctx = new Context()
     await ctx.plugin(GameDefinitions)
     ctx.gameDefinitions.register({
-      id: 'test', rulesVersion: 1, configSchema: {}, actionSchema: {},
-      validateConfig: () => null, validateAction: () => null, initial: () => [],
+      id: 'test', rulesVersion: 1, configSchema: {},
+      validateConfig: () => null, action: () => ({ schema: {}, validate: () => null }), initial: () => [],
       reduce: () => null, pending: () => undefined, resolve: () => [], view: () => null,
       modelPrompt: () => '',
     })
@@ -81,6 +81,33 @@ describe('game registries', () => {
     expect(observed).toHaveBeenCalledTimes(1)
     ctx.gameControllers.onRegister(() => { throw 'broken' })
     expect(() => ctx.gameControllers.register('third', provider)).not.toThrow()
+    await ctx.fiber.dispose()
+  })
+
+  it('reports controller availability through explicit and validation-backed providers', async () => {
+    const ctx = new Context()
+    await ctx.plugin(GameControllerRegistry)
+    const base = { drive: async () => undefined, cancel: async () => undefined }
+    ctx.gameControllers.register('ready', { ...base, validate: async () => undefined })
+    ctx.gameControllers.register('error', { ...base, validate: async () => { throw new Error('not ready') } })
+    ctx.gameControllers.register('string', { ...base, validate: async () => { throw 'offline' } })
+    const availability = vi.fn(() => Promise.resolve({ available: false, message: 'route blocked' }))
+    ctx.gameControllers.register('explicit', { ...base, validate: async () => undefined, availability })
+
+    await expect(ctx.gameControllers.availability('missing', { type: 'human' })).resolves.toEqual({
+      available: false, message: "game controller 'missing' is unavailable",
+    })
+    await expect(ctx.gameControllers.availability('ready', { type: 'human' })).resolves.toEqual({ available: true })
+    await expect(ctx.gameControllers.availability('error', { type: 'human' })).resolves.toEqual({
+      available: false, message: 'not ready',
+    })
+    await expect(ctx.gameControllers.availability('string', { type: 'human' })).resolves.toEqual({
+      available: false, message: 'offline',
+    })
+    await expect(ctx.gameControllers.availability('explicit', { type: 'human' })).resolves.toEqual({
+      available: false, message: 'route blocked',
+    })
+    expect(availability).toHaveBeenCalledWith({ type: 'human' })
     await ctx.fiber.dispose()
   })
 

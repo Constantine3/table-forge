@@ -1,0 +1,5 @@
+/** Host loader entry for the Avalon browser plugin. */
+
+/** Host half has no behavior. */
+/* v8 ignore next -- the Host loader invokes this inert package half. */
+export function apply(): void {}

@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 `dsh-game-rps` registers the `rps` game definition. A match has exactly two seats and a fixed positive `roundCount`; `maxRounds` limits deployment cost and defaults to 20.
 
-Each round opens one simultaneous action window. Choices stay in submission events until both seats act, then `rps/round-resolved` reveals both choices and records the winner. The match finishes after exactly the configured number of rounds, and equal scores produce a draw.
+Each round opens one public simultaneous action window and supplies the same seat-specific choice schema to both players. Choices stay in submission events until both seats act, then `rps/round-resolved` reveals both choices and records the winner. The match finishes after exactly the configured number of rounds, and equal scores produce a draw.
 
 ## Configuration
 
@@ -17,7 +17,7 @@ Each round opens one simultaneous action window. Choices stay in submission even
 
 #### What the model sees
 
-The AI sees the RPS rules, its current seat observation, and a schema accepting exactly `rock`, `paper`, or `scissors`. Sealed opponent choices are absent.
+The AI sees the RPS rules, its current seat observation, and a schema accepting exactly `rock`, `paper`, or `scissors`. Its reasoning and natural-language output are instructed to use Simplified Chinese while those protocol enum values stay exact. Sealed opponent choices are absent.
 
 #### Token effect
 

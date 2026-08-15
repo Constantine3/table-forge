@@ -22,7 +22,13 @@ export interface GameRemoteMatchView {
   readonly revision: number
   readonly status: 'active' | 'blocked' | 'abandoned' | 'finished'
   readonly seats: readonly GameRemoteSeatSpec[]
-  readonly window?: { readonly id: string; readonly requiredSeats: readonly string[]; readonly submittedSeats: readonly string[] }
+  readonly window?: {
+    readonly id: string
+    readonly requiredSeats: readonly string[]
+    readonly submittedSeats: readonly string[]
+    readonly canAct: boolean
+    readonly actionSchema?: GameWireJson
+  }
   readonly blockedSeats: readonly { readonly seatId: string; readonly message: string }[]
   readonly game: GameWireJson
 }

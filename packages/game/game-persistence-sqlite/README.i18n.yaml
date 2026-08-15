@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/game/game-persistence-sqlite/README.md
-README.md: b7fa83402af5004e42b897ce66f9c80c74f33f0b
-README.zh.md: f774ab0c90ca5d68a08a5014d9d6944b16caa5fc
+README.md: f1159ccb861b05228cbf6a78b4e59054d2767a68
+README.zh.md: c49adaf739ce5b11f506dc4c6730b9dc7ddc8a59

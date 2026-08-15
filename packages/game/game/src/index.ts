@@ -38,6 +38,35 @@ export const GameCommandId = (value: string): GameCommandId => value as GameComm
 /** Lossless JSON accepted by match persistence and public views. */
 export type GameJson = null | boolean | number | string | readonly GameJson[] | { readonly [key: string]: GameJson }
 
+/** Current durable match format. Pre-release records with another format are rejected. */
+export const MATCH_FORMAT_VERSION = 1
+
+/** Identifies a durable match whose record format cannot enter the current rules engine. */
+export class UnsupportedMatchFormatError extends Error {
+  /** Create an unsupported-format diagnostic.
+   * @param matchId - rejected match identity.
+   * @param formatVersion - persisted format value.
+   */
+  constructor(matchId: MatchId, formatVersion: number) {
+    super(`match '${matchId}' has unsupported format ${formatVersion}`)
+    this.name = 'UnsupportedMatchFormatError'
+  }
+}
+
+/** Identifies a durable match whose game rules version is unavailable. */
+export class UnsupportedGameRulesError extends Error {
+  /** Create an unsupported-rules diagnostic.
+   * @param matchId - rejected match identity.
+   * @param gameId - game definition identity.
+   * @param persistedVersion - rules version stored by the match.
+   * @param currentVersion - rules version registered by the running definition.
+   */
+  constructor(matchId: MatchId, gameId: string, persistedVersion: number, currentVersion: number) {
+    super(`match '${matchId}' uses unsupported rules version ${persistedVersion} for '${gameId}'; current version is ${currentVersion}`)
+    this.name = 'UnsupportedGameRulesError'
+  }
+}
+
 /** Controller selected for one seat. */
 export type SeatControllerSpec =
   | { readonly type: 'human' }
@@ -64,12 +93,31 @@ export interface GameRuleEvent {
 export interface GameActionWindow {
   readonly key: string
   readonly requiredSeats: readonly SeatId[]
+  /** Seats whose identities and progress may be projected while the window is open. */
+  readonly audience: 'public' | 'required-seats'
 }
 
 /** Input supplied when a definition creates its initial events. */
 export interface GameInitialInput {
   readonly config: GameJson
   readonly seats: readonly MatchSeatSpec[]
+  /** Private entropy persisted only through definition-owned initial events. */
+  readonly randomSeed: string
+}
+
+/** Input used to resolve a seat-specific action schema and validator. */
+export interface GameActionInput<State> {
+  readonly state: State
+  readonly window: GameActionWindow
+  readonly seat: MatchSeatSpec
+}
+
+/** Action schema and validator for one seat in one active window. */
+export interface GameActionSpec {
+  /** JSON Schema object used for the AI tool and human controls. */
+  readonly schema: Readonly<Record<string, GameJson>>
+  /** Validate and detach one submitted action. */
+  validate(value: unknown): GameJson
 }
 
 /** Input supplied when a definition resolves a complete action window. */
@@ -88,18 +136,16 @@ export interface GameDefinition<State = unknown> {
   readonly rulesVersion: number
   /** JSON Schema object describing deployment-resolved match configuration. */
   readonly configSchema: GameJson
-  /** JSON Schema object used for the AI action tool's `action` field. */
-  readonly actionSchema: Readonly<Record<string, unknown>>
   /** Validate and detach game configuration. */
   validateConfig(value: unknown): GameJson
-  /** Validate and detach a submitted action. */
-  validateAction(value: unknown): GameJson
   /** Create the initial rule events. */
   initial(input: GameInitialInput): readonly GameRuleEvent[]
   /** Reduce one event into the next deterministic state. */
   reduce(state: State | undefined, event: GameRuleEvent): State
   /** Return the sole active window, or `undefined` after completion. */
   pending(state: State): GameActionWindow | undefined
+  /** Resolve the action schema and validator for one required seat. */
+  action(input: GameActionInput<State>): GameActionSpec
   /** Resolve a fully submitted window into durable rule events. */
   resolve(input: GameResolveInput<State>): readonly GameRuleEvent[]
   /** Project a public or seat-scoped JSON view. */
@@ -120,7 +166,8 @@ export interface MatchEvent {
 /** Persisted match header. */
 export interface MatchRecord {
   readonly id: MatchId
-  readonly formatVersion: 0
+  /** Persisted format discriminator; the engine rejects unsupported values before reducing events. */
+  readonly formatVersion: number
   readonly gameId: string
   readonly rulesVersion: number
   readonly config: GameJson
@@ -175,7 +222,13 @@ export interface MatchView {
   readonly revision: number
   readonly status: 'active' | 'blocked' | 'abandoned' | 'finished'
   readonly seats: readonly MatchSeatSpec[]
-  readonly window?: { readonly id: ActionWindowId; readonly requiredSeats: readonly SeatId[]; readonly submittedSeats: readonly SeatId[] }
+  readonly window?: {
+    readonly id: ActionWindowId
+    readonly requiredSeats: readonly SeatId[]
+    readonly submittedSeats: readonly SeatId[]
+    readonly canAct: boolean
+    readonly actionSchema?: GameJson
+  }
   /** Controller failures for seats that require an operator retry. */
   readonly blockedSeats: readonly { readonly seatId: SeatId; readonly message: string }[]
   readonly game: GameJson
@@ -222,7 +275,7 @@ export interface GameControllerRequest {
   readonly seat: MatchSeatSpec
   readonly windowId: ActionWindowId
   readonly prompt: string
-  readonly actionSchema: Readonly<Record<string, unknown>>
+  readonly actionSchema: Readonly<Record<string, GameJson>>
 }
 
 /** Provider that drives one configured controller type. */

@@ -130,6 +130,7 @@
     { "path": "./packages/game/game" },
     { "path": "./packages/game/game-engine" },
     { "path": "./packages/game/game-rps" },
+    { "path": "./packages/game/game-avalon" },
     { "path": "./packages/game/game-persistence-sqlite" },
     { "path": "./packages/game/game-controller-agent" },
     { "path": "./packages/llm/token-meter" },

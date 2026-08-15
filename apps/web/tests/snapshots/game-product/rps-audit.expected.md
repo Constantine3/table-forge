@@ -1,0 +1,26 @@
+- main:
+  - button "TABLE FORGE"
+  - text: LLM 原生游戏引擎
+  - button "开启回合通知"
+  - paragraph: 当前对局
+  - heading "剪刀 · 石头 · 布" [level=1]
+  - button "新对局"
+  - text: 你
+  - strong: "0"
+  - text: 已结束 AI 一号
+  - strong: "1"
+  - text: 已结束 AI 一号获胜
+  - strong: 第 1 局
+  - text: 你：石头 AI 一号：布
+  - emphasis: AI 一号胜
+  - group:
+    - text: AI 审计时间线（1 条）
+    - paragraph: 按持久化事件时间排列；“分析”是模型私有推理，“动作”是模型调用游戏工具的参数，规则声明为匿名的决策内容会脱敏。
+    - list:
+      - listitem:
+        - article:
+          - text: "#1"
+          - strong: AI 一号
+          - text: 猜拳决策 已接受动作
+          - time: {{clock}} · 模型回合 1
+          - paragraph: 选择：布

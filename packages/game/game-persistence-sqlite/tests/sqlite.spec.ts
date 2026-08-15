@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import GamePersistence from '@deepseek-ai/dsh-game'
-import { MatchId, SeatId, type MatchRecord } from '@deepseek-ai/dsh-game'
+import { MATCH_FORMAT_VERSION, MatchId, SeatId, type MatchRecord } from '@deepseek-ai/dsh-game'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { apply, SqliteGamePersistence } from '../src/index.ts'
 
 const record = (id = 'match'): MatchRecord => ({
-  id: MatchId(id), formatVersion: 0, gameId: 'rps', rulesVersion: 1, config: { roundCount: 1 },
+  id: MatchId(id), formatVersion: MATCH_FORMAT_VERSION, gameId: 'rps', rulesVersion: 1, config: { roundCount: 1 },
   seats: [
     { id: SeatId('a'), displayName: 'A', controller: { type: 'human' } },
     { id: SeatId('b'), displayName: 'B', controller: { type: 'agent', provider: 'p', model: 'm' } },
@@ -22,7 +22,7 @@ describe('SQLite game persistence', () => {
     const persistence = new SqliteGamePersistence(':memory:')
     const id = MatchId('match')
     await persistence.create({
-      id, formatVersion: 0, gameId: 'rps', rulesVersion: 1, config: { roundCount: 1 },
+      id, formatVersion: MATCH_FORMAT_VERSION, gameId: 'rps', rulesVersion: 1, config: { roundCount: 1 },
       seats: [{ id: SeatId('a'), displayName: 'A', controller: { type: 'human' } }], createdAt: 1,
       events: [{ seq: 0, time: 2, type: 'match/rule', data: { ruleType: 'started' } }],
     })
@@ -35,7 +35,9 @@ describe('SQLite game persistence', () => {
     const persistence = new SqliteGamePersistence(':memory:')
     await persistence.create(record('one'))
     await persistence.create({ ...record('two'), createdAt: 2 })
+    await persistence.create({ ...record('legacy'), formatVersion: 0, createdAt: 3 })
     expect((await persistence.list()).map(item => item.id)).toEqual(['two', 'one'])
+    expect(() => persistence.load(MatchId('legacy'))).toThrow(/unsupported format 0/)
     await expect(persistence.create(record('one'))).rejects.toThrow()
     await expect(persistence.append(MatchId('one'), 1, [
       { seq: 2, time: 3, type: 'match/abandoned', data: {} },
@@ -67,7 +69,7 @@ describe('SQLite game persistence', () => {
     const persistence = new SqliteGamePersistence(':memory:')
     const id = MatchId('invalid')
     await expect(persistence.create({
-      id, formatVersion: 0, gameId: 'rps', rulesVersion: 1, config: {},
+      id, formatVersion: MATCH_FORMAT_VERSION, gameId: 'rps', rulesVersion: 1, config: {},
       seats: [{ id: SeatId('a'), displayName: 'A', controller: { type: 'human' } }], createdAt: 1,
       events: [{ seq: 1, time: 2, type: 'match/rule', data: {} }],
     })).rejects.toThrow(/not contiguous/)
@@ -103,7 +105,7 @@ describe('SQLite game persistence', () => {
 
   it('rejects corrupt durable headers, JSON, seats, and events', async () => {
     const mutations: Array<[string, string, RegExp]> = [
-      ['format', 'UPDATE matches SET format_version = 2', /unsupported format/],
+      ['format', 'UPDATE matches SET format_version = 0', /unsupported format/],
       ['empty-id', "UPDATE matches SET game_id = ''", /invalid header/],
       ['config-json', "UPDATE matches SET config_json = '{'", /not valid JSON/],
       ['config-lossy', "UPDATE matches SET config_json = '1e999'", /not lossless JSON/],

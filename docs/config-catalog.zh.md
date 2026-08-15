@@ -626,6 +626,22 @@ export type Config = LocalConfig
 
 来源：[`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-game-avalon"></a>
+
+## `@deepseek-ai/dsh-game-avalon`
+
+需要：`gameDefinitions`
+
+```ts config-catalog
+/** Deployment limits for public statements. */
+export interface Config {
+  /** Maximum UTF-16 code units accepted in one public statement. */
+  maxStatementChars?: number
+}
+```
+
+来源：[`packages/game/game-avalon/src/index.ts:23`](../packages/game/game-avalon/src/index.ts)
+
 <a id="deepseek-aidsh-game-controller-agent"></a>
 
 ## `@deepseek-ai/dsh-game-controller-agent`
@@ -637,6 +653,10 @@ export type Config = LocalConfig
 export interface Config {
   /** Maximum model turns allowed for one action window before the seat remains pending. */
   maxAttemptsPerAction?: number
+  /** Maximum output tokens for each AI-seat model request. */
+  maxTokensPerRequest?: number
+  /** Post-timeout reasoning efforts keyed by provider and then model id. */
+  timeoutRetryReasoningEfforts?: Record<string, Record<string, string>>
   /** Complete system instruction used by every isolated AI player. */
   playerInstruction: string
   /** Host-side TCP probes keyed by provider route; omitted routes rely on model resolution only. */
@@ -652,7 +672,7 @@ export interface ProviderProbeConfig {
 }
 ```
 
-来源：[`packages/game/game-controller-agent/src/index.ts:48`](../packages/game/game-controller-agent/src/index.ts)
+来源：[`packages/game/game-controller-agent/src/index.ts:57`](../packages/game/game-controller-agent/src/index.ts)
 
 <a id="deepseek-aidsh-game-persistence-sqlite"></a>
 
@@ -666,7 +686,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/game/game-persistence-sqlite/src/index.ts:14`](../packages/game/game-persistence-sqlite/src/index.ts)
+来源：[`packages/game/game-persistence-sqlite/src/index.ts:18`](../packages/game/game-persistence-sqlite/src/index.ts)
 
 <a id="deepseek-aidsh-game-rps"></a>
 
@@ -3103,6 +3123,8 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse`（[`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-directory-picker-native`（[`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-game`（[`packages/client/ui-game/src/index.ts`](../packages/client/ui-game/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-game-avalon`（[`packages/client/ui-game-avalon/src/index.ts`](../packages/client/ui-game-avalon/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-game-rps`（[`packages/client/ui-game-rps/src/index.ts`](../packages/client/ui-game-rps/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-goal`（[`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-input-trigger`（[`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-jobs`（[`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts)）

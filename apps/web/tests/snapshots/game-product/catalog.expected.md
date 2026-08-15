@@ -1,0 +1,19 @@
+- main:
+  - button "TABLE FORGE"
+  - text: LLM 原生游戏引擎
+  - button "开启回合通知"
+  - paragraph: 选择游戏
+  - heading "一张桌，多种推演" [level=1]
+  - paragraph: 模型负责决策，事件溯源规则引擎负责裁定、封存动作与恢复对局。
+  - button "经典 · 同时行动 剪刀 · 石头 · 布 你对 AI，或观看两名 AI 对决":
+    - text: 经典 · 同时行动
+    - strong: 剪刀 · 石头 · 布
+    - text: 你对 AI，或观看两名 AI 对决
+  - button "五人 · 隐藏身份 阿瓦隆 你与四名 AI，在任务与谎言之间辨认阵营":
+    - text: 五人 · 隐藏身份
+    - strong: 阿瓦隆
+    - text: 你与四名 AI，在任务与谎言之间辨认阵营
+  - heading "历史牌桌" [level=2]
+  - button "进行中 · avalon avalon-e":
+    - text: 进行中 · avalon
+    - strong: avalon-e

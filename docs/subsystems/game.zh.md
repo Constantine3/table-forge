@@ -2,25 +2,31 @@
 
 [English](game.md) | 中文
 
-游戏子系统运行确定性、事件溯源的对局，其中席位可以由人类或独立配置的 AI Agent 控制。首个规则定义是剪刀石头布，支持人类对 AI 与 AI 对 AI，并可配置 1–20 局。
+游戏子系统运行确定性、事件溯源的对局，其中席位可以由人类或独立配置的 AI Agent 控制。交付产品包括支持人类对 AI 或 AI 对 AI 的剪刀石头布，以及由一名人类和四名 AI 组成的固定五人阿瓦隆。
 
 ## 所有权
 
-`@deepseek-ai/dsh-game` 定义共享词汇以及 `gameDefinitions`、`gameControllers`、`gamePersistence` 和 `matches` 服务。`game-engine` 拥有命令与只追加的对局日志，`game-persistence-sqlite` 拥有磁盘提供方，`game-controller-agent` 把一个 AI 席位适配为专属 Agent 与 Session，`game-rps` 只拥有纯规则。
+`@deepseek-ai/dsh-game` 定义共享词汇以及 `gameDefinitions`、`gameControllers`、`gamePersistence` 和 `matches` 服务。`game-engine` 拥有命令与只追加的对局日志，`game-persistence-sqlite` 拥有磁盘提供方，`game-controller-agent` 把一个 AI 席位适配为专属 Agent 与 Session，`game-rps` 和 `game-avalon` 只拥有纯规则。通用 `ui-game` 根界面拥有目录、持久选择和 Remote 操作；`ui-game-rps` 与 `ui-game-avalon` 拥有各自的设置和棋盘界面。
 
-游戏定义发布经部署配置解析后的设置 schema，验证配置与动作、产生规则事件、将事件归约为状态、声明当前动作窗口并投影公开或席位范围的视图。它不执行 I/O。引擎以幂等方式接受命令，以原子方式创建对局及其初始事件，在发布 `match/changed` 前追加后续事件批次，并从日志重建所有视图。定义和控制器注册后会恢复兼容的待处理 AI 动作。
+游戏定义发布经部署配置解析后的设置 schema，验证配置与每个席位的当前动作、产生规则事件、将事件归约为状态、声明当前动作窗口并投影公开或席位范围的视图。每个窗口声明参与席位与提交状态是公开还是仅限必需行动的席位。规则定义不执行 I/O。引擎以幂等方式接受命令，以原子方式创建对局及其初始事件，在发布 `match/changed` 前追加后续事件批次，并从日志重建所有视图。定义和控制器注册后会恢复兼容的待处理 AI 动作。对局格式或游戏规则版本不受支持的记录会继续存储，但不会出现在产品列表和恢复中。
 
-## 隐藏的同时动作
+## 隐藏动作
 
-动作窗口列出必须行动的全部席位。提交会持久化，但在所有必需席位完成前不会出现在对局投影中。随后引擎关闭窗口，并请求规则定义产生确定性的裁定事件。因此后行动的 AI 席位无法看到较早提交的封存选择。
+动作窗口列出必须行动的全部席位。提交会持久化，但动作数据在所有必需席位完成前不会出现在对局投影中。随后引擎关闭窗口，并请求规则定义产生确定性的裁定事件。因此后行动的 AI 席位无法看到较早提交的封存选择。受限窗口还会对非参与者隐藏参与席位 id、提交状态和控制器故障归属；只有可以行动的席位会收到其当前 JSON schema。
+
+## 五人阿瓦隆
+
+阿瓦隆使用私有种子分配梅林、刺客、两名亚瑟的忠臣和一名莫德雷德的爪牙，再持久化分配结果以保持确定回放。队长公开队伍并选择顺时针或逆时针讨论；指定方向上的相邻席位先发言，所有非队长席位依次发言，队长进行第五句也是最后一句归票发言。五句发言全部提交后，每个席位才收到不附带陈述的封存赞成票或否决票；通过后的队员提交封存任务动作。五次任务人数依次为 2、3、2、3、3。三次任务失败或连续五支队伍被否决时邪方获胜；三次任务成功会打开受限刺杀窗口，只有刺杀裁定后才公开全部身份。
+
+进行中的席位投影只含规则允许的身份知识。梅林看到邪方席位，邪方玩家互相识别，忠臣没有额外身份信息。任务裁定只公开失败票数。私有刺杀动作待处理时，浏览器不会标明刺客。
 
 ## AI 席位
 
-每个 AI 席位拥有自己的提供方、模型、显示名称、Agent 与 Session。控制器使用部署配置的完整玩家指令、屏蔽通用编码 agent 上下文，并在该 Agent 的范围内只暴露 `submit_game_action`。模型收到规则、席位范围的观察以及当前动作窗口标识，而控制器会将工具绑定到该标识，因此模型只提交游戏数据。窗口变化后，对局引擎仍会拒绝延迟调用。控制器工作按席位串行，因此打开下一窗口不会与上一 Agent 回合重叠。
+每个 AI 席位拥有自己的提供方、模型、显示名称、Agent 与 Session。控制器使用部署配置的完整玩家指令、屏蔽通用编码 agent 上下文，并为每次控制器请求注册一个确切的 `submit_game_action` 工具。交付指令要求思维链与自然语言输出使用简体中文，同时保持协议标识符的精确值。模型收到规则、席位范围观察、当前动作窗口标识及其当前 JSON schema；控制器把工具绑定到该标识，因此模型只提交游戏数据。持久 Session 请求事件记录这些输入。窗口变化后，对局引擎仍会拒绝延迟调用。控制器工作按席位串行，因此打开下一窗口不会与上一 Agent 回合重叠。
 
 对局日志与 AI Session 日志用途不同。对局事件是权威游戏事实；Session 事件重建某个模型实际看到的提示词与工具调用。
 
-控制器尝试耗尽后会记录阻塞席位事件，而不是留下无限期的活跃牌桌。阻塞状态在重启后仍然存在，并阻止自动重新分派，直到操作员重试该席位或结束对局。浏览器公开这两项操作，并把 AI Session 日志作为本地审计视图读取。
+控制器尝试耗尽后会记录阻塞席位事件，而不是留下无限期的活跃牌桌。阻塞状态在重启后仍然存在，并阻止自动重新分派，直到操作员重试当前阻塞或结束对局。恢复、牌桌选择、刷新、活跃游玩和放弃都不会读取 AI Session 日志。浏览器只允许在对局正常完成后通过显式审计操作载入这些日志；已放弃对局不能审计。
 
 ## 装配
 
@@ -88,7 +94,7 @@ has(type: string): boolean
 onRegister(listener: (type: string) => void): () => void
 ```
 
-Source: [`packages/game/game/src/index.ts:246`](../../packages/game/game/src/index.ts)
+Source: [`packages/game/game/src/index.ts:299`](../../packages/game/game/src/index.ts)
 
 <a id="ctxgamedefinitions--gamedefinitionregistry"></a>
 
@@ -121,7 +127,7 @@ list(): readonly GameDefinition[]
 onRegister(listener: (gameId: string) => void): () => void
 ```
 
-Source: [`packages/game/game/src/index.ts:346`](../../packages/game/game/src/index.ts)
+Source: [`packages/game/game/src/index.ts:399`](../../packages/game/game/src/index.ts)
 
 <a id="ctxgamepersistence--gamepersistence"></a>
 
@@ -154,7 +160,7 @@ load(matchId: MatchId): Promise<MatchRecord | undefined>
 list(): Promise<readonly Omit<MatchRecord, 'events'>[]>
 ```
 
-Source: [`packages/game/game/src/index.ts:133`](../../packages/game/game/src/index.ts)
+Source: [`packages/game/game/src/index.ts:180`](../../packages/game/game/src/index.ts)
 
 <a id="ctxmatches--matchservice"></a>
 
@@ -201,7 +207,7 @@ abandon(matchId: MatchId): Promise<MatchView>
 retry(matchId: MatchId, seatId: SeatId): Promise<MatchView>
 ```
 
-Source: [`packages/game/game/src/index.ts:185`](../../packages/game/game/src/index.ts)
+Source: [`packages/game/game/src/index.ts:238`](../../packages/game/game/src/index.ts)
 
 <a id="match-events"></a>
 
@@ -223,5 +229,5 @@ Notify consumers that a committed match revision is available.
 'match/changed'(matchId: MatchId, revision: number): void
 ```
 
-Source: [`packages/game/game/src/index.ts:421`](../../packages/game/game/src/index.ts)
+Source: [`packages/game/game/src/index.ts:474`](../../packages/game/game/src/index.ts)
 <!-- END GENERATED cordis-surface -->

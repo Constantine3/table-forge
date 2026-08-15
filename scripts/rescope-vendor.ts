@@ -77,6 +77,36 @@ interface GenericSkip {
 }
 
 const GENERIC_SKIPS: readonly GenericSkip[] = [
+  // These files use `cordis` as a product event scope, locale namespace, or
+  // generated representation of those identifiers rather than an npm name.
+  ...[
+    'docs/event-producer-consumer.md',
+    'docs/event-producer-consumer.zh.md',
+    'docs/subsystems/extensions.md',
+    'docs/subsystems/extensions.zh.md',
+    'packages/api/remotes/src/remote-events.ts',
+    'packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx',
+    'packages/extensions/cordis-client-runner/src/client/index.ts',
+    'packages/extensions/cordis-client-runner/src/client/runtime.ts',
+    'packages/extensions/cordis-client-runner/tests/orchestrator.client.spec.ts',
+    'packages/extensions/cordis-client-runner/tests/plugin.client.spec.ts',
+    'packages/extensions/cordis-host-runner/src/index.ts',
+    'packages/extensions/cordis-host-runner/src/inspect-registry.ts',
+    'packages/extensions/cordis-host-runner/src/types.ts',
+    'packages/extensions/cordis-host-runner/tests/helpers.ts',
+    'packages/extensions/cordis-host-runner/tests/runner.spec.ts',
+    'packages/extensions/cordis-host-runner/tests/versioning.spec.ts',
+    'packages/extensions/tool-cordis/src/api-catalog.ts',
+    'packages/extensions/tool-cordis/src/providers.ts',
+    'packages/extensions/ui-cordis/src/client/CordisActionRow.tsx',
+    'packages/extensions/ui-cordis/src/client/CordisDefineRow.tsx',
+    'packages/extensions/ui-cordis/src/client/CordisPanel.tsx',
+    'packages/extensions/ui-cordis/src/client/CordisRunRow.tsx',
+    'packages/extensions/ui-cordis/src/client/index.ts',
+    'packages/extensions/ui-cordis/src/client/inventory.ts',
+    'packages/extensions/ui-cordis/src/client/locales.ts',
+    'scripts/gen-cordis-catalog.ts',
+  ].map(file => ({ file, upstream: ['cordis'] })),
   // `vendorPackages` lists vendor/ directory names, joined with 'vendor' below it.
   { file: 'packages/examples/acp-demo/tests/built-bin.e2e.ts', upstream: ['cordis', 'cosmokit', 'schemastery'] },
   // `Symbol.for('schemastery')` and the `vendor:` metadata field are upstream identifiers.

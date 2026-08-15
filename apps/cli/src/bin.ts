@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
 import { parseDshArgs } from './args.ts'
+import { formatProfileStartupDiagnostic } from './startup-diagnostic.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
 // one directory under apps/cli, so the checked-in manifest resolves with the
@@ -26,28 +27,37 @@ function readVersion(): string {
 
 const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 
-switch (invocation.mode) {
-  case 'profile': {
-    const { runProfile } = await import('./profile-boot.ts')
-    await runProfile({
-      environment: loadLayeredEnv('dsh'),
-      profile: invocation.profile,
-      patchFiles: invocation.patches,
-      args: invocation.args,
-    })
-    break
+try {
+  switch (invocation.mode) {
+    case 'profile': {
+      const { runProfile } = await import('./profile-boot.ts')
+      await runProfile({
+        environment: loadLayeredEnv('dsh'),
+        profile: invocation.profile,
+        patchFiles: invocation.patches,
+        args: invocation.args,
+      })
+      break
+    }
+    case 'plugin': {
+      const { runPlugin } = await import('./plugin.ts')
+      process.exit(runPlugin(invocation.profile, invocation.args))
+      break
+    }
+    case 'dump-config': {
+      const { runDumpConfig } = await import('./dump-config.ts')
+      runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
+      break
+    }
+    default:
+      invocation satisfies never
+      throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)
   }
-  case 'plugin': {
-    const { runPlugin } = await import('./plugin.ts')
-    process.exit(runPlugin(invocation.profile, invocation.args))
-    break
-  }
-  case 'dump-config': {
-    const { runDumpConfig } = await import('./dump-config.ts')
-    runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
-    break
-  }
-  default:
-    invocation satisfies never
-    throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)
+} catch (error) {
+  const diagnostic = invocation.mode === 'profile'
+    ? formatProfileStartupDiagnostic(invocation.profile, error)
+    : undefined
+  if (diagnostic === undefined) throw error
+  process.stderr.write(`${diagnostic}\n`)
+  process.exitCode = 1
 }

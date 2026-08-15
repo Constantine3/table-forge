@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -473,6 +474,39 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(result.stdout).toBe('')
       expect(result.stderr).toContain('llm-pi-ai')
     } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('reports an occupied Web port without the Loader error chain', async () => {
+    const occupied = createServer()
+    await new Promise<void>((resolve, reject) => {
+      occupied.once('error', reject)
+      occupied.listen(0, '127.0.0.1', resolve)
+    })
+    const address = occupied.address()
+    if (address === null || typeof address === 'string') throw new Error('occupied-port fixture did not bind TCP')
+    const home = mkdtempSync(join(tmpdir(), 'dsh-port-conflict-'))
+    try {
+      const result = await runBuiltBin(['game', '--port', String(address.port)], {
+        DSH_HOME: home,
+        DSH_TELEMETRY_DISABLED: '1',
+      })
+      expect(result).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: [
+          `dsh: cannot start profile "game": 127.0.0.1:${String(address.port)} is already in use.`,
+          'Stop the process using that address, or choose another port: dsh game --port <port>',
+        ].join('\n'),
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        occupied.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        })
+      })
       rmSync(home, { recursive: true, force: true })
     }
   }, 30_000)

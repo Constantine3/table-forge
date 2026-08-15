@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../api/remotes/tsconfig.client.json" },
+    { "path": "../connection/tsconfig.client.json" },
+    { "path": "../runtime" },
+    { "path": "../ui-slots" },
+    { "path": "../../game/game" }
+  ]
+}

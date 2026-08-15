@@ -97,6 +97,41 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'gameDefinitions',
+    pkg: 'game',
+    title: 'Deterministic game definition registry',
+    mode: 'seam',
+    implementations: ['game-rps'],
+    consumers: ['game-engine'],
+    note: 'Definitions validate configuration and actions, reduce durable rule events, declare action windows, and project seat-scoped views.',
+  },
+  {
+    key: 'gamePersistence',
+    pkg: 'game',
+    title: 'Durable match event storage',
+    mode: 'seam',
+    implementations: ['game-persistence-sqlite'],
+    consumers: ['game-engine'],
+    note: 'Providers atomically create match headers with initial events and append revision-checked event batches.',
+  },
+  {
+    key: 'gameControllers',
+    pkg: 'game',
+    title: 'Game seat controller registry',
+    mode: 'seam',
+    implementations: ['game-controller-agent'],
+    consumers: ['game-engine'],
+    note: 'Controller providers validate durable seat specifications and drive one seat against a bound action window.',
+  },
+  {
+    key: 'matches',
+    pkg: 'game-engine',
+    title: 'Event-sourced match runtime',
+    mode: 'core',
+    consumers: ['game-controller-agent', 'ui-game'],
+    note: 'Owns serialized commands, deterministic reconstruction, public projections, Remote calls, and controller scheduling.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

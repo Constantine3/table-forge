@@ -642,6 +642,115 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'gameControllers',
+    summary: 'Effect-owned registry of controller providers.',
+    description: 'Effect-owned registry of controller providers.',
+    methods: [
+      {
+        signature: 'register(type: string, provider: GameControllerProvider): () => void',
+        description: 'Register one controller type.',
+        parameters: [{ name: 'type', description: 'discriminator.' }, { name: 'provider', description: 'implementation.' }],
+        returns: 'stale-safe disposer.',
+      },
+      {
+        signature: 'drive(type: string, request: GameControllerRequest): Promise<void>',
+        description: 'Dispatch a controller request.',
+        parameters: [{ name: 'type', description: 'discriminator.' }, { name: 'request', description: 'active request.' }],
+        returns: 'provider completion.',
+      },
+      {
+        signature: 'async cancel(matchId: MatchId): Promise<void>',
+        description: 'Stop controller work for one match through every registered provider.',
+        parameters: [{ name: 'matchId', description: 'match whose work must quiesce.' }],
+        returns: 'completion after all providers settle.',
+      },
+      {
+        signature: 'validate(type: string, controller: SeatControllerSpec): Promise<void>',
+        description: 'Validate one controller specification through its owning provider.',
+        parameters: [{ name: 'type', description: 'controller discriminator.' }, { name: 'controller', description: 'unpersisted specification.' }],
+        returns: 'validation completion.',
+      },
+      {
+        signature: 'availability(type: string, controller: SeatControllerSpec): Promise<{ readonly available: boolean; readonly message?: string }>',
+        description: 'Check current endpoint availability through the owning provider.',
+        parameters: [{ name: 'type', description: 'controller discriminator.' }, { name: 'controller', description: 'controller specification to check.' }],
+        returns: 'current reachability and an optional diagnostic.',
+      },
+      {
+        signature: 'has(type: string): boolean',
+        description: 'Test whether a controller type is currently available.',
+        parameters: [{ name: 'type', description: 'controller discriminator.' }],
+        returns: 'whether a provider owns the type.',
+      },
+      {
+        signature: 'onRegister(listener: (type: string) => void): () => void',
+        description: 'Observe current and future successful controller registrations.',
+        parameters: [{ name: 'listener', description: 'callback invoked for available providers and later registrations.' }],
+        returns: 'stale-safe disposer.',
+      },
+    ],
+  },
+  {
+    key: 'gameDefinitions',
+    summary: 'Effect-owned registry of versioned game definitions.',
+    description: 'Effect-owned registry of versioned game definitions.',
+    methods: [
+      {
+        signature: 'register(definition: GameDefinition): () => void',
+        description: 'Register one definition.',
+        parameters: [{ name: 'definition', description: 'rules definition.' }],
+        returns: 'stale-safe disposer.',
+      },
+      {
+        signature: 'require(id: string): GameDefinition',
+        description: 'Resolve a definition.',
+        parameters: [{ name: 'id', description: 'game id.' }],
+        returns: 'matching definition.',
+      },
+      {
+        signature: 'list(): readonly GameDefinition[]',
+        description: 'List registered definitions.',
+        parameters: [],
+        returns: 'definitions in stable id order.',
+      },
+      {
+        signature: 'onRegister(listener: (gameId: string) => void): () => void',
+        description: 'Observe current and future successful definition registrations.',
+        parameters: [{ name: 'listener', description: 'callback invoked for available definitions and later registrations.' }],
+        returns: 'stale-safe disposer.',
+      },
+    ],
+  },
+  {
+    key: 'gamePersistence',
+    summary: 'Atomic persistence operations required by the match engine.',
+    description: 'Atomic persistence operations required by the match engine.',
+    methods: [
+      {
+        signature: 'create(record: MatchRecord): Promise<void>',
+        description: 'Atomically create one durable record and its initial events; duplicate ids reject.',
+        parameters: [{ name: 'record', description: 'complete header and initial event batch.' }],
+      },
+      {
+        signature: 'append(matchId: MatchId, expectedRevision: number, events: readonly MatchEvent[]): Promise<void>',
+        description: 'Append a contiguous batch at `expectedRevision`; conflicts reject.',
+        parameters: [{ name: 'matchId', description: 'target match.' }, { name: 'expectedRevision', description: 'required current event count.' }, { name: 'events', description: 'contiguous event batch to commit.' }],
+      },
+      {
+        signature: 'load(matchId: MatchId): Promise<MatchRecord | undefined>',
+        description: 'Load one match, or return `undefined` when absent.',
+        parameters: [{ name: 'matchId', description: 'target match.' }],
+        returns: 'stored record, when present.',
+      },
+      {
+        signature: 'list(): Promise<readonly Omit<MatchRecord, \'events\'>[]>',
+        description: 'List match headers without exposing raw events.',
+        parameters: [],
+        returns: 'stored headers.',
+      },
+    ],
+  },
+  {
     key: 'goals',
     summary: 'Goal service (`ctx.goals`) backed exclusively by the owning session log.',
     description: 'Goal service (`ctx.goals`) backed exclusively by the owning session log.',
@@ -878,6 +987,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select a provider by the file\'s extension and run one query. Selection is per-query and order-independent; no match throws `LspError` `LSP_UNAVAILABLE`.',
         parameters: [{ name: 'request', description: 'the normalized query.' }, { name: 'signal', description: 'optional cancellation forwarded to the selected provider.' }],
         returns: 'the normalized, closed-union result.',
+      },
+    ],
+  },
+  {
+    key: 'matches',
+    summary: 'Runtime match operations supplied by the concrete engine provider.',
+    description: 'Runtime match operations supplied by the concrete engine provider.',
+    methods: [
+      {
+        signature: 'create(request: CreateMatchRequest): Promise<MatchView>',
+        description: 'Create and initialize one match.',
+        parameters: [{ name: 'request', description: 'validated game, configuration, and seats.' }],
+        returns: 'committed initial view.',
+      },
+      {
+        signature: 'get(matchId: MatchId, humanSeat?: SeatId): Promise<MatchView | undefined>',
+        description: 'Read one match view.',
+        parameters: [{ name: 'matchId', description: 'target match.' }, { name: 'humanSeat', description: 'optional seat used for human-safe projection.' }],
+        returns: 'current view, when present.',
+      },
+      {
+        signature: 'list(): Promise<readonly MatchView[]>',
+        description: 'List current public match views.',
+        parameters: [],
+        returns: 'views ordered by the provider.',
+      },
+      {
+        signature: 'submit(request: SubmitActionRequest): Promise<MatchView>',
+        description: 'Submit one action to an open window.',
+        parameters: [{ name: 'request', description: 'idempotent seat action command.' }],
+        returns: 'committed resulting view.',
+      },
+      {
+        signature: 'abandon(matchId: MatchId): Promise<MatchView>',
+        description: 'Abandon an active match and stop its controller work.',
+        parameters: [{ name: 'matchId', description: 'target match.' }],
+        returns: 'committed terminal view.',
+      },
+      {
+        signature: 'retry(matchId: MatchId, seatId: SeatId): Promise<MatchView>',
+        description: 'Retry one blocked controller seat in its current action window.',
+        parameters: [{ name: 'matchId', description: 'target match.' }, { name: 'seatId', description: 'blocked seat to reschedule.' }],
+        returns: 'committed active view.',
       },
     ],
   },
@@ -2398,6 +2550,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'match/changed',
+    mode: 'parallel',
+    signature: '\'match/changed\'(matchId: MatchId, revision: number): void',
+    summary: 'Notify consumers that a committed match revision is available.',
+    description: 'Notify consumers that a committed match revision is available.',
+    parameters: [{ name: 'matchId', description: 'changed match.' }, { name: 'revision', description: 'committed revision.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -2609,6 +2769,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
 
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
+  {
+    name: 'ActionWindowId',
+    declaration: 'export type ActionWindowId = Branded<\'ActionWindowId\'>;',
+  },
   {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
@@ -2910,6 +3074,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateGoalResult {\n    readonly ref: GoalRef;\n}',
   },
   {
+    name: 'CreateMatchRequest',
+    declaration: 'export interface CreateMatchRequest {\n    readonly gameId: string;\n    readonly config: unknown;\n    readonly seats: readonly MatchSeatSpec[];\n}',
+  },
+  {
     name: 'CreateSessionOptions',
     declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
   },
@@ -3088,6 +3256,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FsWriteOutcome',
     declaration: 'export interface FsWriteOutcome {\n    operation: \'create\' | \'update\';\n    version: FsVersion;\n    before: string | null;\n    after: string;\n}',
+  },
+  {
+    name: 'GameActionWindow',
+    declaration: 'export interface GameActionWindow {\n    readonly key: string;\n    readonly requiredSeats: readonly SeatId[];\n}',
+  },
+  {
+    name: 'GameCommandId',
+    declaration: 'export type GameCommandId = Branded<\'GameCommandId\'>;',
+  },
+  {
+    name: 'GameControllerProvider',
+    declaration: 'export interface GameControllerProvider {\n    validate(controller: SeatControllerSpec): Promise<void>;\n    availability?(controller: SeatControllerSpec): Promise<{\n        readonly available: boolean;\n        readonly message?: string;\n    }>;\n    drive(request: GameControllerRequest): Promise<void>;\n    cancel(matchId: MatchId): Promise<void>;\n}',
+  },
+  {
+    name: 'GameControllerRequest',
+    declaration: 'export interface GameControllerRequest {\n    readonly matchId: MatchId;\n    readonly seat: MatchSeatSpec;\n    readonly windowId: ActionWindowId;\n    readonly prompt: string;\n    readonly actionSchema: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'GameDefinition',
+    declaration: 'export interface GameDefinition<State = unknown> {\n    readonly id: string;\n    readonly rulesVersion: number;\n    readonly configSchema: GameJson;\n    readonly actionSchema: Readonly<Record<string, unknown>>;\n    validateConfig(value: unknown): GameJson;\n    validateAction(value: unknown): GameJson;\n    initial(input: GameInitialInput): readonly GameRuleEvent[];\n    reduce(state: State | undefined, event: GameRuleEvent): State;\n    pending(state: State): GameActionWindow | undefined;\n    resolve(input: GameResolveInput<State>): readonly GameRuleEvent[];\n    view(state: State, seat?: SeatId): GameJson;\n    modelPrompt(state: State, seat: SeatId): string;\n}',
+  },
+  {
+    name: 'GameInitialInput',
+    declaration: 'export interface GameInitialInput {\n    readonly config: GameJson;\n    readonly seats: readonly MatchSeatSpec[];\n}',
+  },
+  {
+    name: 'GameJson',
+    declaration: 'export type GameJson = null | boolean | number | string | readonly GameJson[] | {\n    readonly [key: string]: GameJson;\n};',
+  },
+  {
+    name: 'GameResolveInput',
+    declaration: 'export interface GameResolveInput<State> {\n    readonly state: State;\n    readonly window: GameActionWindow;\n    readonly actions: ReadonlyMap<SeatId, GameJson>;\n}',
+  },
+  {
+    name: 'GameRuleEvent',
+    declaration: 'export interface GameRuleEvent {\n    readonly type: string;\n    readonly data: GameJson;\n}',
   },
   {
     name: 'GenerateOptions',
@@ -3360,6 +3564,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MatchEvent',
+    declaration: 'export interface MatchEvent {\n    readonly seq: number;\n    readonly time: number;\n    readonly type: \'match/created\' | \'match/action-opened\' | \'match/action-submitted\' | \'match/action-closed\' | \'match/controller-blocked\' | \'match/controller-retried\' | \'match/abandoned\' | \'match/rule\';\n    readonly data: GameJson;\n}',
+  },
+  {
+    name: 'MatchId',
+    declaration: 'export type MatchId = Branded<\'MatchId\'>;',
+  },
+  {
+    name: 'MatchRecord',
+    declaration: 'export interface MatchRecord {\n    readonly id: MatchId;\n    readonly formatVersion: 0;\n    readonly gameId: string;\n    readonly rulesVersion: number;\n    readonly config: GameJson;\n    readonly seats: readonly MatchSeatSpec[];\n    readonly createdAt: number;\n    readonly events: readonly MatchEvent[];\n}',
+  },
+  {
+    name: 'MatchSeatSpec',
+    declaration: 'export interface MatchSeatSpec {\n    readonly id: SeatId;\n    readonly displayName: string;\n    readonly controller: SeatControllerSpec;\n}',
+  },
+  {
+    name: 'MatchView',
+    declaration: 'export interface MatchView {\n    readonly id: MatchId;\n    readonly gameId: string;\n    readonly revision: number;\n    readonly status: \'active\' | \'blocked\' | \'abandoned\' | \'finished\';\n    readonly seats: readonly MatchSeatSpec[];\n    readonly window?: {\n        readonly id: ActionWindowId;\n        readonly requiredSeats: readonly SeatId[];\n        readonly submittedSeats: readonly SeatId[];\n    };\n    readonly blockedSeats: readonly {\n        readonly seatId: SeatId;\n        readonly message: string;\n    }[];\n    readonly game: GameJson;\n}',
   },
   {
     name: 'Message',
@@ -3716,6 +3940,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchResultView',
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
+  },
+  {
+    name: 'SeatControllerSpec',
+    declaration: 'export type SeatControllerSpec = {\n    readonly type: \'human\';\n} | {\n    readonly type: \'agent\';\n    readonly provider: string;\n    readonly model: string;\n};',
+  },
+  {
+    name: 'SeatId',
+    declaration: 'export type SeatId = Branded<\'SeatId\'>;',
   },
   {
     name: 'ServerResponse',
@@ -4160,6 +4392,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentStopReasonMap',
     declaration: 'export interface SubagentStopReasonMap {\n    completed: \'completed\';\n    aborted: \'aborted\';\n    error: \'error\';\n    \'max-tokens\': \'max-tokens\';\n    refusal: \'refusal\';\n}',
+  },
+  {
+    name: 'SubmitActionRequest',
+    declaration: 'export interface SubmitActionRequest {\n    readonly matchId: MatchId;\n    readonly windowId: ActionWindowId;\n    readonly commandId: GameCommandId;\n    readonly seatId: SeatId;\n    readonly action: unknown;\n}',
   },
   {
     name: 'SubprocessCollect',

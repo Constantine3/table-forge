@@ -782,6 +782,19 @@
       "ignoreDependencies": [
         "@deepseek-ai/.+"
       ]
+    },
+    "packages/bundle/game-app": {
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
+    "packages/game/game-engine": {
+      "ignoreDependencies": [
+        "zod"
+      ]
     }
   }
 }

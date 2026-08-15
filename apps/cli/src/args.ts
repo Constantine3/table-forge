@@ -10,7 +10,7 @@
  * `dsh --profile tui --resume abc` boots the tui profile with `--resume abc`,
  * and `dsh --profile web -h` prints the web app's help, not this one's.
  *
- * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
+ * `game` and `web` are aliases for their shipped profiles; `plugin` manages a profile's
  * plugin dependencies by forwarding to pnpm.
  * @module @deepseek-ai/dsh/args
  */
@@ -63,6 +63,7 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 /** The launcher's own help text; each app prints its own. */
 const HELP_EXAMPLES = `
 Examples:
+  dsh game                                   open the Table Forge game product
   dsh --profile web                          boot the web profile (same as: dsh web)
   dsh --profile headless "run the tests"     answer one task, print the result, and exit
   dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
@@ -152,6 +153,21 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       program.error(`error: ${command} takes none of parent --profile, --patch, --dump-config, or --dump-default-config`)
     }
   }
+
+  const game = program.command('game').description('boot Table Forge (alias of --profile game); web flags follow')
+  game
+    .helpOption(false)
+    .allowUnknownOption()
+    .passThroughOptions()
+    .enablePositionalOptions()
+    .argument('[args...]', 'arguments for the game web app (see: dsh game --help)')
+    .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
+    .option('--dump-config', 'print the composed game-profile tree and exit')
+    .option('--dump-default-config', 'print the game profile bundle layers and exit')
+    .action((args: string[], options: BootOptions) => {
+      rejectParentOptions('game')
+      resolved = resolveBoot(game, 'game', options, args)
+    })
 
   const web = program.command('web').description('boot the web profile (alias of --profile web); the web app\'s own flags follow')
   web

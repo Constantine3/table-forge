@@ -6,7 +6,7 @@
  * renderer and install() is boot-once; app-shell IS the production installer,
  * so this bench hands it the uninstalled service exactly as boot does.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
@@ -24,13 +24,16 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   ctx.provide('sessions', new TestSessions(stabilize, ctx))
   ctx.provide('workspaces', new TestWorkspaces(stabilize))
-  ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
   const fiber = ctx.plugin({ inject: [...AppShell.inject], apply: AppShell.apply })
   await fiber.await()
   return { ctx, slots, fiber }
 }
 
 describe('app-shell assembly plugin', () => {
+  it('depends only on the product-neutral root-slot services', () => {
+    expect(AppShell.inject).toEqual(['slots', 'sessions'])
+  })
+
   it('installs the renderer and provides the assembled appShell face', async () => {
     const { ctx, slots } = await bench()
     slots.register({ name: 'root' }, () => <div data-testid="root-probe" />)

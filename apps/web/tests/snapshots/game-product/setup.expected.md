@@ -1,0 +1,15 @@
+- main:
+  - text: TABLE FORGE LLM 原生游戏引擎
+  - paragraph: 首个游戏
+  - heading "剪刀 · 石头 · 布" [level=1]
+  - paragraph: 配置牌桌与 AI 席位；模型只负责决策，确定性的规则引擎负责裁定。
+  - button "你对 AI"
+  - button "AI 对 AI"
+  - text: 总局数
+  - spinbutton "总局数": "3"
+  - group "AI 对手":
+    - text: AI 对手 提供方
+    - combobox "提供方":
+      - option "DeepSeek Self Deployment" [selected]
+      - option "Hy3 TokenHub"
+  - button "开始对局"

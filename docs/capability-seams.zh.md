@@ -9,6 +9,16 @@
 
 ```mermaid
 flowchart LR
+  pkg_game["game"]
+  svc_gameDefinitions["ctx.gameDefinitions<br/>Deterministic game definition registry"]
+  pkg_game_rps["game-rps"]
+  pkg_game_engine["game-engine"]
+  svc_gamePersistence["ctx.gamePersistence<br/>Durable match event storage"]
+  pkg_game_persistence_sqlite["game-persistence-sqlite"]
+  svc_gameControllers["ctx.gameControllers<br/>Game seat controller registry"]
+  pkg_game_controller_agent["game-controller-agent"]
+  svc_matches["ctx.matches<br/>Event-sourced match runtime"]
+  pkg_ui_game["ui-game"]
   pkg_attachment["attachment"]
   svc_attachments["ctx.attachments<br/>Durable binary attachment storage"]
   pkg_attachment_local["attachment-local"]
@@ -225,6 +235,13 @@ flowchart LR
   pkg_fs_e2b --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
+  pkg_game --> svc_gameControllers
+  pkg_game --> svc_gameDefinitions
+  pkg_game --> svc_gamePersistence
+  pkg_game_controller_agent --> svc_gameControllers
+  pkg_game_engine --> svc_matches
+  pkg_game_persistence_sqlite --> svc_gamePersistence
+  pkg_game_rps --> svc_gameDefinitions
   pkg_goal --> svc_goals
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
@@ -319,6 +336,9 @@ flowchart LR
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
   svc_fs --> pkg_tool_fs
+  svc_gameControllers --> pkg_game_engine
+  svc_gameDefinitions --> pkg_game_engine
+  svc_gamePersistence --> pkg_game_engine
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
@@ -330,6 +350,8 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_matches --> pkg_game_controller_agent
+  svc_matches --> pkg_ui_game
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -413,6 +435,10 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.gameDefinitions` | `seam` | [`game`](../packages/game/game) | [`game-rps`](../packages/game/game-rps) | [`game-engine`](../packages/game/game-engine) | - | 定义验证配置与动作、归约持久化规则事件、声明动作窗口并投影席位范围视图。 |
+| `ctx.gamePersistence` | `seam` | [`game`](../packages/game/game) | [`game-persistence-sqlite`](../packages/game/game-persistence-sqlite) | [`game-engine`](../packages/game/game-engine) | - | 提供方原子创建带初始事件的对局头记录，并追加经过修订检查的事件批次。 |
+| `ctx.gameControllers` | `seam` | [`game`](../packages/game/game) | [`game-controller-agent`](../packages/game/game-controller-agent) | [`game-engine`](../packages/game/game-engine) | - | 控制器提供方验证持久化席位规范，并针对绑定的动作窗口驱动一个席位。 |
+| `ctx.matches` | `core` | [`game-engine`](../packages/game/game-engine) | - | [`game-controller-agent`](../packages/game/game-controller-agent), `ui-game` | - | 拥有串行命令、确定性重建、公开投影、Remote 调用和控制器调度。 |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | 宿主会在会话事件之前提交已接受的图片；提供方适配器将已授权的持久引用解析为提供方原生内容。 |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | 适配器注册提供方实现；agent loop（智能体循环）与压缩功能调用提供方无关的流服务。 |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | 拥有按会话隔离的回放折叠区；压力消费方共享不可变且带修订版本的测量结果。 |

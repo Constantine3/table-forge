@@ -626,6 +626,66 @@ export type Config = LocalConfig
 
 来源：[`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-game-controller-agent"></a>
+
+## `@deepseek-ai/dsh-game-controller-agent`
+
+需要：`agents` · `gameControllers` · `llm` · `matches` · `sessionPersistence` · `systemPrompt` · `tools`
+
+```ts config-catalog
+/** Retry, instruction, and Host reachability policy for AI seats. */
+export interface Config {
+  /** Maximum model turns allowed for one action window before the seat remains pending. */
+  maxAttemptsPerAction?: number
+  /** Complete system instruction used by every isolated AI player. */
+  playerInstruction: string
+  /** Host-side TCP probes keyed by provider route; omitted routes rely on model resolution only. */
+  providerProbes?: Record<string, ProviderProbeConfig>
+}
+
+/** Host-side reachability probe for one provider route. */
+export interface ProviderProbeConfig {
+  /** HTTP endpoint whose host and port must accept a TCP connection. */
+  endpoint: string
+  /** Maximum connection time before the route is unavailable. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/game/game-controller-agent/src/index.ts:48`](../packages/game/game-controller-agent/src/index.ts)
+
+<a id="deepseek-aidsh-game-persistence-sqlite"></a>
+
+## `@deepseek-ai/dsh-game-persistence-sqlite`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** SQLite database path, or `:memory:` for an ephemeral store. */
+  path: string
+}
+```
+
+来源：[`packages/game/game-persistence-sqlite/src/index.ts:14`](../packages/game/game-persistence-sqlite/src/index.ts)
+
+<a id="deepseek-aidsh-game-rps"></a>
+
+## `@deepseek-ai/dsh-game-rps`
+
+需要：`gameDefinitions`
+
+```ts config-catalog
+/** Plugin configuration controls product defaults and deployment cost limits. */
+export interface Config {
+  /** Round count used when match creation omits an explicit value. */
+  defaultRounds?: number
+  /** Largest round count accepted during match creation. */
+  maxRounds?: number
+}
+```
+
+来源：[`packages/game/game-rps/src/index.ts:11`](../packages/game/game-rps/src/index.ts)
+
 <a id="deepseek-aidsh-goal"></a>
 
 ## `@deepseek-ai/dsh-goal`
@@ -1040,8 +1100,8 @@ export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
 /**
  * Reasoning-dispatch compatibility switches, set on the route (its models'
  * default) or per model (winning over the route). Only the switches pi-ai's
- * reasoning dispatch reads are offered; the rest of pi-ai's compat surface
- * keeps its baseURL-derived auto-detection. pi-ai types both fields only on
+ * request serialization reads are offered; the rest of pi-ai's compat surface
+ * keeps its baseURL-derived auto-detection. pi-ai types these fields only on
  * `OpenAICompletionsCompat` — the other wire protocols define their reasoning
  * fields in the protocol itself — so resolution rejects a model-level switch
  * anywhere else, while a route-level default skips past models it cannot fit.
@@ -1051,6 +1111,8 @@ export interface PiAiCompatProfile {
   thinkingFormat?: PiAiThinkingFormat
   /** Whether the endpoint accepts `reasoning_effort`; absent keeps the catalog entry's, then pi-ai's baseURL-derived guess. */
   supportsReasoningEffort?: boolean
+  /** Whether system instructions use the OpenAI `developer` role instead of `system`. */
+  supportsDeveloperRole?: boolean
 }
 
 /** One request modality a pi-ai model may accept. */
@@ -3040,6 +3102,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-deliverables` — 需要 `systemPrompt`（[`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse`（[`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-directory-picker-native`（[`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-game`（[`packages/client/ui-game/src/index.ts`](../packages/client/ui-game/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-goal`（[`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-input-trigger`（[`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-jobs`（[`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts)）
@@ -3069,6 +3132,9 @@ export interface Config {
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
+- `@deepseek-ai/dsh-game`（[`packages/game/game/src/index.ts`](../packages/game/game/src/index.ts)）
+- `@deepseek-ai/dsh-game-app`（[`packages/bundle/game-app/src/index.ts`](../packages/bundle/game-app/src/index.ts)）
+- `@deepseek-ai/dsh-game-engine` — 需要 `gameControllers` · `gameDefinitions` · `gamePersistence`（[`packages/game/game-engine/src/index.ts`](../packages/game/game-engine/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-auto` — 需要 `webServer` · `loader`（[`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-native`（[`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts)）

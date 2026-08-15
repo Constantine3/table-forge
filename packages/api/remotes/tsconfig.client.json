@@ -31,6 +31,12 @@
       "path": "../../goal/goal"
     },
     {
+      "path": "../../game/game"
+    },
+    {
+      "path": "../../game/game-engine"
+    },
+    {
       "path": "../../feedback/message-feedback"
     },
     {

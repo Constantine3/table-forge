@@ -1,0 +1,181 @@
+# Table Forge game product additions over the browser application bundle.
+
+- id: agent-default-model
+  config:
+    provider: deepseek-self-deployment
+    model: deepseek-v4-flash-vision
+
+- id: llm-deepseek
+  disabled: true
+
+- id: llm-pi-ai
+  config:
+    providers:
+      deepseek-self-deployment:
+        displayName: DeepSeek Self Deployment
+        apiKeyEnv: DEEPSEEK_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:4100/v1
+        reasoning: max
+        streamIdleTimeoutMs: 600000
+        compat:
+          thinkingFormat: deepseek
+          supportsReasoningEffort: true
+          supportsDeveloperRole: false
+        defaultInput: [text, image]
+        models:
+          - id: deepseek-v4-flash-vision
+            name: DeepSeek-V4-Flash-Vision
+            reasoningEfforts:
+              off:
+              high: high
+              max: max
+      hy3-tokenhub:
+        displayName: Hy3 TokenHub
+        apiKeyEnv: HY3_TOKENHUB_API_KEY
+        api: openai-completions
+        baseURL: https://api.lkeap.cloud.tencent.com/plan/v3
+        reasoning: high
+        streamIdleTimeoutMs: 60000
+        compat:
+          thinkingFormat: deepseek
+          supportsReasoningEffort: true
+          supportsDeveloperRole: false
+        models:
+          - id: hy3
+            name: Hy3
+            contextWindow: 262144
+            maxTokens: 131072
+            reasoningEfforts:
+              off:
+              low: low
+              high: high
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are an AI player inside Table Forge. Follow the active game's rules and submit only actions available to your seat.
+
+# The game product owns the root slot. The generic coding shell remains
+# available as reusable infrastructure but is not mounted into this profile.
+- id: ui-layout
+  disabled: true
+
+- id: ui-sidebar
+  disabled: true
+
+- id: ui-settings-general
+  disabled: true
+
+- id: ui-settings-models
+  disabled: true
+
+- id: ui-settings-plugin-inventory
+  disabled: true
+
+- id: ui-conversation
+  disabled: true
+
+- id: ui-tool
+  disabled: true
+
+- id: ui-cordis
+  disabled: true
+
+- id: ui-workflow-run
+  disabled: true
+
+- id: ui-deliverables
+  disabled: true
+
+- id: ui-workspace
+  disabled: true
+
+- id: ui-input-trigger
+  disabled: true
+
+- id: ui-commands
+  disabled: true
+
+- id: ui-skill
+  disabled: true
+
+- id: ui-subagent
+  disabled: true
+
+- id: ui-jobs
+  disabled: true
+
+- id: ui-goal
+  disabled: true
+
+- id: ui-message-feedback
+  disabled: true
+
+- id: ui-model-selection
+  disabled: true
+
+- id: ui-permission
+  disabled: true
+
+- id: ui-agent-preset
+  disabled: true
+
+- id: ui-settings-plugins
+  disabled: true
+
+- id: ui-plan
+  disabled: true
+
+- id: ui-user-questions
+  disabled: true
+
+- id: ui-trajectory
+  disabled: true
+
+- id: session-log-download
+  disabled: true
+
+- id: directory-picker
+  disabled: true
+
+- insert:
+    - id: game-directory-picker
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+    - id: game-app-runtime
+      name: '@deepseek-ai/dsh-game-app'
+
+    - id: game-definitions
+      name: '@deepseek-ai/dsh-game'
+
+    - id: game-persistence
+      name: '@deepseek-ai/dsh-game-persistence-sqlite'
+      config:
+        path: !!js dshHomePath('games.sqlite')
+
+    - id: game-engine
+      name: '@deepseek-ai/dsh-game-engine'
+      inject: [gameDefinitions, gameControllers, gamePersistence]
+
+    - id: game-rps
+      name: '@deepseek-ai/dsh-game-rps'
+      inject: [gameDefinitions]
+      config:
+        defaultRounds: 3
+        maxRounds: 20
+
+    - id: game-controller-agent
+      name: '@deepseek-ai/dsh-game-controller-agent'
+      inject: [agents, gameControllers, llm, matches, sessionPersistence, systemPrompt, tools]
+      config:
+        maxAttemptsPerAction: 2
+        providerProbes:
+          deepseek-self-deployment:
+            endpoint: http://127.0.0.1:4100/v1
+            timeoutMs: 1500
+        playerInstruction: >-
+          The rules engine is authoritative. Never claim an action was accepted unless submit_game_action succeeds. Before every action, use the strongest available reasoning and explicitly analyze the current observation, prior rounds, score and objective, uncertainty and hidden information, opponent tendencies, candidate actions, risks, and likely counterplay. Never invent information your seat cannot observe. Complete this analysis in reasoning before calling submit_game_action, then submit the action you judge most likely to advance your objective.
+
+    - id: ui-game
+      name: '@deepseek-ai/dsh-client-ui-game'

@@ -7,6 +7,16 @@ A service can be a core spine service, a swappable capability seam, or a bundle/
 
 ```mermaid
 flowchart LR
+  pkg_game["game"]
+  svc_gameDefinitions["ctx.gameDefinitions<br/>Deterministic game definition registry"]
+  pkg_game_rps["game-rps"]
+  pkg_game_engine["game-engine"]
+  svc_gamePersistence["ctx.gamePersistence<br/>Durable match event storage"]
+  pkg_game_persistence_sqlite["game-persistence-sqlite"]
+  svc_gameControllers["ctx.gameControllers<br/>Game seat controller registry"]
+  pkg_game_controller_agent["game-controller-agent"]
+  svc_matches["ctx.matches<br/>Event-sourced match runtime"]
+  pkg_ui_game["ui-game"]
   pkg_attachment["attachment"]
   svc_attachments["ctx.attachments<br/>Durable binary attachment storage"]
   pkg_attachment_local["attachment-local"]
@@ -223,6 +233,13 @@ flowchart LR
   pkg_fs_e2b --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
+  pkg_game --> svc_gameControllers
+  pkg_game --> svc_gameDefinitions
+  pkg_game --> svc_gamePersistence
+  pkg_game_controller_agent --> svc_gameControllers
+  pkg_game_engine --> svc_matches
+  pkg_game_persistence_sqlite --> svc_gamePersistence
+  pkg_game_rps --> svc_gameDefinitions
   pkg_goal --> svc_goals
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
@@ -317,6 +334,9 @@ flowchart LR
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
   svc_fs --> pkg_tool_fs
+  svc_gameControllers --> pkg_game_engine
+  svc_gameDefinitions --> pkg_game_engine
+  svc_gamePersistence --> pkg_game_engine
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
@@ -328,6 +348,8 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_matches --> pkg_game_controller_agent
+  svc_matches --> pkg_ui_game
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -411,6 +433,10 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.gameDefinitions` | `seam` | [`game`](../packages/game/game) | [`game-rps`](../packages/game/game-rps) | [`game-engine`](../packages/game/game-engine) | - | Definitions validate configuration and actions, reduce durable rule events, declare action windows, and project seat-scoped views. |
+| `ctx.gamePersistence` | `seam` | [`game`](../packages/game/game) | [`game-persistence-sqlite`](../packages/game/game-persistence-sqlite) | [`game-engine`](../packages/game/game-engine) | - | Providers atomically create match headers with initial events and append revision-checked event batches. |
+| `ctx.gameControllers` | `seam` | [`game`](../packages/game/game) | [`game-controller-agent`](../packages/game/game-controller-agent) | [`game-engine`](../packages/game/game-engine) | - | Controller providers validate durable seat specifications and drive one seat against a bound action window. |
+| `ctx.matches` | `core` | [`game-engine`](../packages/game/game-engine) | - | [`game-controller-agent`](../packages/game/game-controller-agent), `ui-game` | - | Owns serialized commands, deterministic reconstruction, public projections, Remote calls, and controller scheduling. |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Owns isolated per-session replay folds; pressure consumers share immutable revisioned measurements. |

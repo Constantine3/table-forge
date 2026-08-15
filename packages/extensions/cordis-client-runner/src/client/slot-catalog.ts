@@ -1068,6 +1068,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'the runtime itself (built in; always present)',
     occupants: [
+      'client-ui-game GameApp',
       'client-ui-layout AppFrame',
     ],
     replaceRisk: 'shadows-shipped-ui',

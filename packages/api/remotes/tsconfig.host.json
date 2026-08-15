@@ -44,6 +44,12 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../game/game"
+    },
+    {
+      "path": "../../game/game-engine"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

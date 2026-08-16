@@ -22,6 +22,14 @@ npx @deepseek-ai/dsh web
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
+To start Table Forge instead, run:
+
+```sh
+npx @deepseek-ai/dsh game
+```
+
+Table Forge includes rock-paper-scissors and five- or six-player Avalon, with human-and-AI or all-AI play.
+
 ### Run from source
 
 To run from a repository checkout:
@@ -29,10 +37,12 @@ To run from a repository checkout:
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
+npx --yes pnpm@11.7.0 install
+npm run build
+npm run dsh -- web
 ```
+
+Use `npm run dsh -- game` to run Table Forge from source.
 
 ## Community and support
 

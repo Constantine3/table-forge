@@ -12,7 +12,7 @@ agent（智能体）已经会运行能够覆盖自身改动的测试和检查，
 
 ## 决策
 
-[lefthook.yml](../../../../lefthook.yml) 将两个钩子都保留为有界的本地检查点。Pre-commit 按顺序运行：不加载项目的 [Oxlint](2026-07-29-oxlint-linter.md) 配置验证改动过的 JavaScript 和 TypeScript 文件，应用带[一次有界重试](2026-08-09-oxlint-only-fix-workflow.md)的安全修复，并重新暂存这些文件；`git diff --cached --check` 拒绝暂存 diff 中的空白错误，vendor manifest（元数据清单）守卫检查 vendor 源码元数据。Pre-push 运行 `pnpm run typecheck`；该命令会先准备好生成的 Host Typert 约定，再运行 Client 增量类型检查。
+[lefthook.yml](../../../../lefthook.yml) 将两个钩子都保留为有界的本地检查点。Pre-commit 按顺序运行：不加载项目的 [Oxlint](2026-07-29-oxlint-linter.md) 配置验证改动过的 JavaScript 和 TypeScript 文件，应用带[一次有界重试](2026-08-09-oxlint-only-fix-workflow.md)的安全修复，并重新暂存这些文件；`git diff --cached --check` 拒绝暂存 diff 中的空白错误，vendor manifest（元数据清单）守卫检查 vendor 源码元数据。Pre-push 运行 `npm run typecheck`；该命令会先准备好生成的 Host Typert 约定，再运行 Client 增量类型检查，且无需全局 pnpm 可执行文件。
 
 Pre-commit 不运行类型分析、测试、快照、文档检查、构建、`hygiene` 或门禁调度器。Pre-push 只增加仓库类型检查所需的 Host 约定构建。可选运行的 `check:all` 包脚本独立于这些钩子，从 [scripts/run-gates.ts](../../../../scripts/run-gates.ts) 中选择 `check-all` 调度器清单；它是贡献者命令，而非对 agent 的指令。
 
@@ -31,6 +31,6 @@ agent 检查待推送的 diff，并仅运行一次能够覆盖其行为的最小
 
 ## 结果
 
-普通提交的关键路径是不加载项目的暂存文件 Oxlint 修复与验证，缓存已预热时推送的关键路径是经过准备的增量类型检查。贡献者仍可选择用一条命令完整演练，且不会扩展钩子关键路径或 agent 必须运行的验证集合。钩子耗时只作为开发观察数据和 PR（Pull Request）证据记录，不设置会受主机负载与缓存状态影响的计时测试。
+普通提交的关键路径是不加载项目的暂存文件 Oxlint 修复与验证，缓存已预热时推送的关键路径是经过准备的增量类型检查。钩子使用 Node 自带的 npm CLI；pnpm 仍负责依赖安装和 lockfile。贡献者仍可选择用一条命令完整演练，且不会扩展钩子关键路径或 agent 必须运行的验证集合。钩子耗时只作为开发观察数据和 PR（Pull Request）证据记录，不设置会受主机负载与缓存状态影响的计时测试。
 
 从本地推送成功不再能证明仓库完整矩阵已通过。agent 必须选择相关的行为证据，评审人必须判断该选择是否与 diff 相符，CI 则对每个推送版本提供一次全面信号。

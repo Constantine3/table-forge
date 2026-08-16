@@ -390,7 +390,38 @@ describe('Issue lifecycle workflow', () => {
   })
 })
 
+describe('Root package scripts', () => {
+  it('does not require a global pnpm for script chaining', () => {
+    const manifest = loadWorkflow('package.json')
+    if (!isRecord(manifest.scripts)) {
+      throw new TypeError('package.json must define scripts')
+    }
+
+    const pnpmScripts = Object.entries(manifest.scripts).filter(
+      ([, command]) => typeof command === 'string' && /\bpnpm\b/.test(command),
+    )
+
+    expect(pnpmScripts).toEqual([])
+  })
+})
+
 describe('Git hooks', () => {
+  it('runs the pre-push checkpoint without a globally installed pnpm', () => {
+    const lefthook = loadWorkflow('lefthook.yml')
+    const prePush = lefthook['pre-push']
+    if (!isRecord(prePush) || !Array.isArray(prePush.jobs)) {
+      throw new TypeError('lefthook must define pre-push jobs')
+    }
+    expect(
+      prePush.jobs.some(
+        (job: unknown) =>
+          isRecord(job)
+          && job.name === 'typecheck'
+          && job.run === 'npm run typecheck',
+      ),
+    ).toBe(true)
+  })
+
   it('leaves frozen Agent Note sidecars to the archive verifier', () => {
     const lefthook = loadWorkflow('lefthook.yml')
 

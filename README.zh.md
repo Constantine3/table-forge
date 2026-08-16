@@ -22,6 +22,14 @@ npx @deepseek-ai/dsh web
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
+如需启动 Table Forge，请运行：
+
+```sh
+npx @deepseek-ai/dsh game
+```
+
+Table Forge 包含石头剪刀布和五人或六人阿瓦隆，支持人类与 AI 同场或全 AI 游玩。
+
 ### 从源码运行
 
 如需从仓库源码运行：
@@ -29,10 +37,12 @@ npx @deepseek-ai/dsh web
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
+npx --yes pnpm@11.7.0 install
+npm run build
+npm run dsh -- web
 ```
+
+从源码运行 Table Forge 时，请使用 `npm run dsh -- game`。
 
 ## 社区与支持
 

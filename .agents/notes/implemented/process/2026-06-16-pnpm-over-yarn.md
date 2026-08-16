@@ -12,23 +12,24 @@ The switching cost is at its lowest right now. Nothing publishes from this repo 
 
 ## Decision
 
-Adopt **pnpm 11.7.0**, pinned via the `packageManager` field and installed through Corepack (same mechanism Yarn used):
+Adopt **pnpm 11.7.0**, pinned via the `packageManager` field, for dependency installation, workspace linking, and lockfile ownership. Supported Node releases do not all include Corepack, so local bootstrap uses `npx --yes pnpm@11.7.0` when pnpm is not already installed; CI installs the pinned CLI explicitly through `pnpm/action-setup`:
 
 - **Workspaces** move from the `package.json` `workspaces` array + `.yarnrc.yml` to `pnpm-workspace.yaml` (`vendor/*`, `packages/*` — the same globs; `examples/*` stay non-workspace, matching the prior setup and tsdown's explicit globs).
 - **Strict symlinked linker** (pnpm's default) replaces Yarn's hoisted `node-modules` linker. We deliberately add **no** `node-linker=hoisted` / `shamefully-hoist` escape hatch: pnpm's non-flat `node_modules` makes phantom dependencies (importing an undeclared transitive dep) fail loudly, which is a *feature* for a repo whose whole quality story is mechanical gates ([mechanical quality gates](2026-06-11-quality-gates.md)). The gate suite — typecheck, lint, test, build, knip — is the safety net that proves no such phantom imports exist.
 - **Build-script allowlist.** pnpm 10+ does not run dependency lifecycle scripts unless allowlisted. `pnpm-workspace.yaml` carries an explicit `allowBuilds` map (`esbuild`, `lefthook`, `@google/genai`, `protobufjs`) — the same supply-chain-hardening posture the repo already takes toward model/tool output, now applied to install-time code execution. `peerDependencyRules.allowedVersions.typescript: '>=5 <7'` silences benign peer-range warnings for the in-repo TypeScript.
-- **Constraints become package-manager-independent.** `yarn.config.cjs` (which imported `@yarnpkg/types` and used `Yarn.workspaces()` / `workspace.set()`) is replaced by `scripts/check-workspace-constraints.ts`, a plain tsx script run as `pnpm run constraints`. It enforces the identical invariants — every package `private: true`; `@deepseek-ai/dsh-*` packages declare `cordis` as both a peer- and dev-dependency with matching ranges, use the root `package.json` version, and set `type: module`; vendored packages checked for privacy only — over the same `vendor` + `packages` scope.
-- All `yarn …` verbs across CI, lefthook hooks, `package.json` scripts, and docs become `pnpm …` / `pnpm run …`. `yarn.lock` → `pnpm-lock.yaml` (lockfile v9). `.gitignore` swaps `.yarn/` for `.pnpm-store/`. Vendored READMEs (e.g. `vendor/cordis/README.md`) keep their upstream `yarn` examples untouched per the Vendoring Policy.
+- **Constraints become package-manager-independent.** `yarn.config.cjs` (which imported `@yarnpkg/types` and used `Yarn.workspaces()` / `workspace.set()`) is replaced by `scripts/check-workspace-constraints.ts`, a plain tsx script exposed as the `constraints` package script. It enforces the identical invariants — every package `private: true`; `@deepseek-ai/dsh-*` packages declare `cordis` as both a peer- and dev-dependency with matching ranges, use the root `package.json` version, and set `type: module`; vendored packages checked for privacy only — over the same `vendor` + `packages` scope.
+- Workspace installation and pnpm-specific operations use the pinned pnpm CLI. Ordinary root package-script dispatch and Lefthook checkpoints use Node's bundled npm CLI so they do not acquire a hidden dependency on a global pnpm executable. CI may use `pnpm run` after its explicit setup action. `yarn.lock` → `pnpm-lock.yaml` (lockfile v9). `.gitignore` swaps `.yarn/` for `.pnpm-store/`. Vendored READMEs (e.g. `vendor/cordis/README.md`) keep their upstream `yarn` examples untouched per the Vendoring Policy.
 
 ## Alternatives considered
 
 - **Keep Yarn 4** — zero churn, but bets on the less-traveled linker mode and a constraints engine tied to one package manager.
 - **npm workspaces** — ubiquitous, but no constraints story and weaker monorepo ergonomics.
 - **pnpm with the hoisted linker** — smoother migration, but throws away the phantom-dependency safety that is the main correctness reason to move.
+- **Require Corepack or a global pnpm for every script and hook** — one command vocabulary, but supported Node releases do not guarantee Corepack and ordinary package-script dispatch needs no pnpm-specific behavior.
 
 ## Consequences
 
-The constraints check loses Yarn's auto-**fix** (`workspace.set()` could rewrite a manifest in place); the tsx script is check-only and exits non-zero with a message instead. This is acceptable — CI never ran `--fix`, and a one-line manual edit is rare. Contributors now `corepack enable` for pnpm rather than Yarn; `pnpm exec lefthook install` replaces `yarn lefthook install` (the `postinstall` hook still runs `lefthook install`).
+The constraints check loses Yarn's auto-**fix** (`workspace.set()` could rewrite a manifest in place); the tsx script is check-only and exits non-zero with a message instead. This is acceptable — CI never ran `--fix`, and a one-line manual edit is rare. Contributors can bootstrap the exact pnpm version with `npx --yes pnpm@11.7.0 install`, while root scripts and Git hooks remain runnable with the npm CLI bundled with Node. The `postinstall` hook still configures Lefthook.
 
 Performance (measured at migration time on the dev NFS filesystem; single-digit-run samples, high variance — directional, not a benchmark suite):
 

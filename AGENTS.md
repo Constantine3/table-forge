@@ -59,25 +59,27 @@ Package groups: [packages/README.md](packages/README.md).
 ## Commands
 
 ```sh
-pnpm install            # pnpm workspaces, node ^22.19 || >=24
-pnpm run clean           # remove build outputs and safe residue from deleted packages
-pnpm run test           # vitest unit tests
-pnpm run test:coverage  # CI coverage gate: per-file 100% on packages/*/*/src
-pnpm run test:e2e       # real-API tests; self-skip without DEEPSEEK_API_KEY
-pnpm run test:snapshot  # keyless ACP/headless replay vs expected outputs; filter: -t <name>
-pnpm run test:snapshot:record  # re-record expected outputs (needs key)
-pnpm run typecheck
-pnpm run lint
-pnpm run duplication    # cross-file TypeScript clone detection
-pnpm run build          # tsc emits lib/types, tsdown bundles runtime
-pnpm run hygiene        # knip + publint + workspace constraints + NodeNext consumer check
-pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
-pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
-pnpm run website:build  # VitePress build (doubles as dead-link check)
-pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
-pnpm run demo:cordis    # the agent modifies its own runtime (needs key)
-pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
+npx --yes pnpm@11.7.0 install
+npm run clean
+npm run test
+npm run test:coverage   # CI coverage gate: per-file 100% on packages/*/*/src
+npm run test:e2e        # real-API tests; self-skip without DEEPSEEK_API_KEY
+npm run test:snapshot   # keyless ACP/headless replay vs expected outputs; filter: -t <name>
+npm run test:snapshot:record  # re-record expected outputs (needs key)
+npm run typecheck
+npm run lint
+npm run duplication
+npm run build           # tsc emits lib/types, tsdown bundles runtime
+npm run hygiene
+npm run check:windows-wine  # only for a known Windows failure; CI owns this signal
+npm run doc-sync
+npm run website:build
+npm run dsh -- --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
+npm run demo:cordis     # needs DEEPSEEK_API_KEY
+npm run demo:acp        # needs DEEPSEEK_API_KEY
 ```
+
+Root package-script chaining and Git hooks use npm, not a global pnpm. Use the pinned `npx` install above; see the [development guide](docs/development.md#prerequisites).
 
 ### Host sandbox failures
 
@@ -146,4 +148,4 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 
 ## Vendoring policy
 
-`vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `pnpm run test && pnpm run build`.
+`vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `npm run test && npm run build`.

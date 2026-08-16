@@ -72,10 +72,10 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   })
   await legacyPersistence.create({
     id: MatchId(AVALON_EVIL_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 6, config: { humanRole: 'assassin' }, createdAt: 2,
+    gameId: 'avalon', rulesVersion: 8, config: { playerCount: 6, humanRole: 'assassin' }, createdAt: 2,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
-      ...[1, 2, 3, 4].map(index => ({
+      ...[1, 2, 3, 4, 5].map(index => ({
         id: SeatId(`ai-${index}`), displayName: `AI ${index}`,
         controller: { type: 'agent' as const, provider: 'deepseek-self-deployment', model: 'deepseek-v4-flash-vision' },
       })),
@@ -86,13 +86,20 @@ it('boots the shipped game product and snapshots installed setup and discussion 
         data: {
           ruleType: 'avalon/started',
           ruleData: {
-            seats: ['human', 'ai-1', 'ai-2', 'ai-3', 'ai-4'], leaderIndex: 0,
-            roles: { human: 'assassin', 'ai-1': 'minion', 'ai-2': 'merlin', 'ai-3': 'loyal-servant', 'ai-4': 'loyal-servant' },
+            seats: ['human', 'ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5'], leaderIndex: 0,
+            roles: {
+              human: 'assassin', 'ai-1': 'minion', 'ai-2': 'merlin',
+              'ai-3': 'loyal-servant', 'ai-4': 'loyal-servant', 'ai-5': 'loyal-servant',
+            },
           },
         },
       },
       ...[1, 2, 3].flatMap((number, index) => {
-        const team = index === 1 ? ['human', 'ai-1', 'ai-2'] : ['human', 'ai-1']
+        const team = [
+          ['human', 'ai-1'],
+          ['human', 'ai-1', 'ai-2'],
+          ['human', 'ai-1', 'ai-2', 'ai-3'],
+        ][index]!
         return [
           {
             seq: index * 2 + 1, time: 2, type: 'match/rule' as const,
@@ -100,7 +107,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
               ruleType: 'avalon/team-vote-resolved',
               ruleData: {
                 proposal: { leader: index === 0 ? 'human' : `ai-${index}`, team, direction: 'clockwise' },
-                statements: [], approveCount: 3, rejectCount: 2, approved: true,
+                statements: [], approveCount: 4, rejectCount: 2, approved: true,
               },
             },
           },
@@ -129,6 +136,13 @@ it('boots the shipped game product and snapshots installed setup and discussion 
     toolArguments: '{"action":{"type":"make-evil-statement","statement":"我判断 AI 2 最像梅林。"}}',
     successText: '邪方发言已提交。',
   })
+  secondLlmServer = await startMockLlmServer({
+    sequence: ['tool_call_success'],
+    repeatLast: true,
+    toolName: 'submit_game_action',
+    toolArguments: '{"action":{"type":"vote-team","approve":true}}',
+    successText: '匿名投票已提交。',
+  })
   const patchPath = join(harnessHome, 'game-setup-test.patch.yml')
   await writeFile(patchPath, [
     '- id: llm-pi-ai',
@@ -140,7 +154,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
     '        api: openai-completions',
     `        baseURL: ${llmServer.baseURL}/v1`,
     '        reasoning: max',
-    '        streamIdleTimeoutMs: 50',
+    '        streamIdleTimeoutMs: 500',
     '        compat:',
     '          supportsReasoningEffort: true',
     '          supportsDeveloperRole: false',
@@ -155,7 +169,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
     '        displayName: Hy3 TokenHub',
     '        apiKeyEnv: HY3_TOKENHUB_API_KEY',
     '        api: openai-completions',
-    '        baseURL: https://api.lkeap.cloud.tencent.com/plan/v3',
+    `        baseURL: ${secondLlmServer.baseURL}/v1`,
     '        reasoning: high',
     '        compat:',
     '          thinkingFormat: deepseek',
@@ -201,7 +215,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   }, LEGACY_MATCH_ID)
   await page.goto(baseUrl)
   await page.getByRole('heading', { name: '一张桌，多种推演', exact: true }).waitFor()
-  expect(await page.getByRole('button', { name: '开启回合通知', exact: true }).count()).toBe(1)
+  expect(await page.getByRole('button', { name: '开启后台回合通知', exact: true }).count()).toBe(1)
   const catalogSnapshot = await captureStableAria(page, 'main', harnessHome)
   if (MODE === 'refresh') await mkdir(SNAPSHOT_DIR, { recursive: true })
   await compareOrRefreshGolden(CATALOG_EXPECTED, catalogSnapshot, MODE)
@@ -215,9 +229,11 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   await page.getByRole('button', { name: /返回游戏列表/ }).click()
   await page.getByRole('button', { name: /阿瓦隆/ }).click()
   await page.getByRole('heading', { name: '阿瓦隆', exact: true }).waitFor()
-  expect(await page.getByRole('combobox').count()).toBe(5)
-  expect(await page.getByLabel('你的角色').count()).toBe(1)
-  expect(await page.getByLabel('AI 席位 4').count()).toBe(1)
+  await page.getByRole('button', { name: '全 AI 对局', exact: true }).click()
+  expect(await page.getByRole('combobox').count()).toBe(7)
+  expect(await page.getByLabel('游戏人数').inputValue()).toBe('6')
+  expect(await page.getByLabel('你的角色').count()).toBe(0)
+  expect(await page.getByLabel('AI 席位 6').count()).toBe(1)
   await compareOrRefreshGolden(AVALON_SETUP_EXPECTED, await captureStableAria(page, 'main', harnessHome), MODE)
 
   await page.reload()
@@ -227,12 +243,12 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   const discussionPersistence = new SqliteGamePersistence(join(harnessHome, 'games.sqlite'))
   await discussionPersistence.create({
     id: MatchId(AVALON_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 6, config: {}, createdAt: 3,
+    gameId: 'avalon', rulesVersion: 8, config: { playerCount: 5 }, createdAt: 3,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
       ...[1, 2, 3, 4].map(index => ({
         id: SeatId(`ai-${index}`), displayName: `AI ${index}`,
-        controller: { type: 'agent' as const, provider: 'deepseek-self-deployment', model: 'deepseek-v4-flash-vision' },
+        controller: { type: 'agent' as const, provider: 'hy3-tokenhub', model: 'hy3' },
       })),
     ],
     events: [
@@ -272,7 +288,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   discussionPersistence.close()
   await page.evaluate((matchId) => { localStorage.setItem('table-forge.active-match', matchId) }, AVALON_DISCUSSION_MATCH_ID)
   await page.reload()
-  await page.getByRole('heading', { name: '阿瓦隆圆桌', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '阿瓦隆', exact: true }).waitFor()
   try {
     await page.getByRole('heading', { name: '队长归票发言', exact: true }).waitFor({ timeout: 10_000 })
   } catch (cause) {
@@ -307,6 +323,8 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   expect(JSON.stringify(evilRequest?.body)).toContain('任一队伍通过时，该计数立即清零')
   expect(JSON.stringify(evilRequest?.body)).toContain('结算只公开赞成票数和否决票数')
   expect(JSON.stringify(evilRequest?.body)).toContain('队长最后归票发言，并在同一个动作中提交最终队伍')
+  expect(JSON.stringify(evilRequest?.body)).toContain('你是 6 人阿瓦隆')
+  expect(JSON.stringify(evilRequest?.body)).toContain('2、3、4、3、4；一支队伍获得至少 4 票赞成')
   await page.getByPlaceholder('总结讨论并说明刺杀判断').fill('我同意刺杀 AI 2。')
   await page.getByRole('button', { name: '提交刺客总结', exact: true }).click()
   await page.getByRole('heading', { name: '刺杀梅林', exact: true }).waitFor()
@@ -320,9 +338,9 @@ it('boots the shipped game product and snapshots installed setup and discussion 
     await page.getByText('邪方密谈：“我判断 AI 2 最像梅林。”', { exact: true }).count(),
     assassinationAuditText,
   ).toBe(1)
-  const voteHistory = page.locator('details').filter({ hasText: '票型：3 票赞成 · 2 票否决' }).first()
+  const voteHistory = page.locator('details').filter({ hasText: '队伍通过 · 票型 4 赞成 / 2 否决' }).first()
   await voteHistory.locator('summary').click()
-  await page.getByText('票型：3 票赞成 · 2 票否决', { exact: true }).first().waitFor()
+  expect(await voteHistory.getAttribute('open')).not.toBeNull()
   await compareOrRefreshGolden(AVALON_ASSASSINATION_EXPECTED, await captureStableAria(page, 'main', harnessHome), MODE)
   expect(await readdir(SNAPSHOT_DIR)).toEqual([
     'avalon-assassination.expected.md', 'avalon-discussion.expected.md', 'avalon-setup.expected.md',

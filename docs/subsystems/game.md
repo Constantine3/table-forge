@@ -2,7 +2,7 @@
 
 English | [中文](game.zh.md)
 
-The game subsystem runs deterministic, event-sourced matches whose seats may be human or independently configured AI agents. The shipped product includes rock-paper-scissors for human-versus-AI or AI-versus-AI play and fixed five-player Avalon for one human with four AI seats.
+The game subsystem runs deterministic, event-sourced matches whose seats may be human or independently configured AI agents. The shipped product includes rock-paper-scissors for human-versus-AI or AI-versus-AI play and five- or six-player Avalon with either one human and the remaining AI seats or an AI-only table.
 
 ## Ownership
 
@@ -14,9 +14,9 @@ A game definition publishes its deployment-resolved setup schema, validates conf
 
 An action window lists every seat that must act. Submissions are durable but their action data is absent from match projections until all required seats submit. The engine then closes the window and asks the rules definition for deterministic resolution events. This prevents a later AI seat from observing an earlier sealed choice. Restricted windows additionally hide participating seat ids, submission status, and controller-failure ownership from non-participants; only the actionable seat receives its current JSON schema.
 
-## Five-player Avalon
+## Five- and six-player Avalon
 
-Avalon assigns Merlin, the Assassin, two Loyal Servants, and one Minion from a private seed, then persists the assignment so replay remains deterministic. A leader publishes a team and chooses clockwise or counterclockwise discussion. The adjacent seat in that direction starts, every non-leader speaks in order, and the leader gives the fifth and final summary statement. Every seat receives a sealed statement-free approval vote only after all five statements commit, and approved team members submit sealed quest actions. The five missions require 2, 3, 2, 3, and 3 players. Three failures or five consecutive rejected teams give evil victory. Three successes open a restricted assassination window, and only its resolution reveals all roles.
+Avalon assigns Merlin, the Assassin, one Minion, and two Loyal Servants for five players or three for six from a private seed, then persists the assignment so replay remains deterministic. A leader publishes a team and chooses clockwise or counterclockwise discussion. The adjacent seat in that direction starts, every non-leader speaks in order, and the leader gives the final summary statement. Every seat receives a sealed statement-free approval vote only after all five or six statements commit, and approved team members submit sealed quest actions. Five-player missions require 2, 3, 2, 3, and 3 players, and a proposed team needs three approvals; six-player missions require 2, 3, 4, 3, and 4 players, and a proposed team needs four. Three failures or five consecutive rejected teams give evil victory. Three successes open restricted sequential evil discussion followed by the Assassin's target action, and only the final resolution reveals all roles.
 
 An active seat projection contains only the role knowledge allowed by the rules. Merlin sees the evil seats, evil players recognize each other, and Loyal Servants receive no extra identity information. Quest resolution publishes only the failure count. The browser never identifies the Assassin while that private action is pending.
 

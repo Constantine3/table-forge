@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-game-avalon",
-  "description": "Browser setup and board for the five-player Avalon game plugin",
+  "description": "Browser setup and board for the five- and six-player Avalon game plugin",
   "version": "0.1.0-rc.5",
   "publishConfig": { "access": "public" },
   "repository": { "type": "git", "url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/client/ui-game-avalon" },

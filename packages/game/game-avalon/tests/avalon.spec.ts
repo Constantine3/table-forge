@@ -15,20 +15,38 @@ const seats = [
   { id: SeatId('ai-4'), displayName: 'AI 4', controller: { type: 'agent' as const, provider: 'p4', model: 'm4' } },
 ] as const satisfies readonly MatchSeatSpec[]
 
-const startedState = (matchConfig: GameJson = {}) => {
+const sixSeats = [
+  ...seats,
+  { id: SeatId('ai-5'), displayName: 'AI 5', controller: { type: 'agent' as const, provider: 'p5', model: 'm5' } },
+] as const satisfies readonly MatchSeatSpec[]
+
+const allAiSeats = [1, 2, 3, 4, 5, 6].map(index => ({
+  id: SeatId(`ai-${index}`), displayName: `AI ${index}`,
+  controller: { type: 'agent' as const, provider: `p${index}`, model: `m${index}` },
+})) satisfies readonly MatchSeatSpec[]
+
+const startedState = (
+  matchConfig: GameJson = {},
+  matchSeats: readonly MatchSeatSpec[] = seats,
+) => {
   const definition = createAvalonDefinition({ maxStatementChars: 20 })
-  const events = definition.initial({ config: matchConfig, seats, randomSeed: 'fixed-seed' })
+  const config = definition.validateConfig(matchConfig)
+  const events = definition.initial({ config, seats: matchSeats, randomSeed: 'fixed-seed' })
   return { definition, event: events[0]!, state: definition.reduce(undefined, events[0]!) }
 }
 
 type AvalonDefinition = ReturnType<typeof createAvalonDefinition>
 type AvalonTestState = Parameters<AvalonDefinition['pending']>[0]
 
-const completeDiscussion = (definition: AvalonDefinition, initial: AvalonTestState): AvalonTestState => {
+const completeDiscussion = (
+  definition: AvalonDefinition,
+  initial: AvalonTestState,
+  matchSeats: readonly MatchSeatSpec[] = seats,
+): AvalonTestState => {
   let state = initial
   while ((definition.view(state) as { phase: string }).phase === 'discussion') {
     const window = definition.pending(state)!
-    const seat = seats.find(candidate => candidate.id === window.requiredSeats[0])!
+    const seat = matchSeats.find(candidate => candidate.id === window.requiredSeats[0])!
     const game = definition.view(state) as { leader: SeatId; proposal: { team: readonly SeatId[] } }
     const action = definition.action({ state, window, seat }).validate(seat.id === game.leader
       ? { type: 'make-statement', statement: '我会根据现有信息判断。', team: game.proposal.team }
@@ -40,11 +58,15 @@ const completeDiscussion = (definition: AvalonDefinition, initial: AvalonTestSta
   return state
 }
 
-const completeEvilDiscussion = (definition: AvalonDefinition, initial: AvalonTestState): AvalonTestState => {
+const completeEvilDiscussion = (
+  definition: AvalonDefinition,
+  initial: AvalonTestState,
+  matchSeats: readonly MatchSeatSpec[] = seats,
+): AvalonTestState => {
   let state = initial
   while ((definition.view(state) as { phase: string }).phase === 'evil-discussion') {
     const window = definition.pending(state)!
-    const seat = seats.find(candidate => candidate.id === window.requiredSeats[0])!
+    const seat = matchSeats.find(candidate => candidate.id === window.requiredSeats[0])!
     const action = definition.action({ state, window, seat }).validate({
       type: 'make-evil-statement', statement: '我建议刺杀最像梅林的玩家。',
     })
@@ -58,7 +80,7 @@ const completeEvilDiscussion = (definition: AvalonDefinition, initial: AvalonTes
 describe('Avalon definition', () => {
   it('assigns the fixed roles and leader deterministically without public leakage', () => {
     const { definition, event, state } = startedState()
-    const repeated = definition.initial({ config: {}, seats, randomSeed: 'fixed-seed' })
+    const repeated = definition.initial({ config: { playerCount: 5 }, seats, randomSeed: 'fixed-seed' })
     expect(repeated).toEqual([event])
     const roles = (event.data as { roles: Record<string, AvalonRole> }).roles
     expect(Object.values(roles).sort()).toEqual(['assassin', 'loyal-servant', 'loyal-servant', 'merlin', 'minion'])
@@ -80,6 +102,26 @@ describe('Avalon definition', () => {
     }
   })
 
+  it('assigns every role privately for five- and six-player all-AI tables', () => {
+    const definition = createAvalonDefinition({ maxStatementChars: 20 })
+    for (const [playerCount, matchSeats, loyalCount] of [
+      [5, allAiSeats.slice(0, 5), 2],
+      [6, allAiSeats, 3],
+    ] as const) {
+      const config = definition.validateConfig({ playerCount })
+      const event = definition.initial({ config, seats: matchSeats, randomSeed: `all-ai-${playerCount}` })[0]!
+      const state = definition.reduce(undefined, event)
+      const roles = (event.data as { roles: Record<string, AvalonRole> }).roles
+      expect(Object.values(roles).filter(role => role === 'loyal-servant')).toHaveLength(loyalCount)
+      expect(Object.keys(roles)).toHaveLength(playerCount)
+      expect(definition.view(state)).not.toHaveProperty('private')
+      for (const seat of matchSeats) {
+        expect(definition.view(state, seat.id)).toMatchObject({ private: { role: roles[seat.id] } })
+      }
+      expect(definition.pending(state)?.requiredSeats).toHaveLength(1)
+    }
+  })
+
   it('rejects persisted state that omits an owned role assignment', () => {
     const definition = createAvalonDefinition({ maxStatementChars: 80 })
     const state = definition.reduce(undefined, {
@@ -91,16 +133,25 @@ describe('Avalon definition', () => {
 
   it('validates setup, structured statements, teams, and role-scoped quest actions', () => {
     const { definition, state } = startedState()
-    expect(definition.validateConfig(null)).toEqual({})
-    expect(definition.validateConfig({ humanRole: 'assassin' })).toEqual({ humanRole: 'assassin' })
+    expect(definition.validateConfig(null)).toEqual({ playerCount: 5 })
+    expect(definition.validateConfig({ humanRole: 'assassin' })).toEqual({ playerCount: 5, humanRole: 'assassin' })
+    expect(definition.validateConfig({ playerCount: 6 })).toEqual({ playerCount: 6 })
     expect(() => definition.validateConfig({ variant: 'custom' })).toThrow(/unexpected fields/)
+    expect(() => definition.validateConfig({ playerCount: 4 })).toThrow(/must be 5 or 6/)
+    expect(() => definition.validateConfig({ playerCount: 5.5 })).toThrow(/must be 5 or 6/)
     expect(() => definition.validateConfig({ humanRole: 'percival' })).toThrow(/human role is invalid/)
     expect(() => definition.validateConfig({ humanRole: 1 })).toThrow(/human role is invalid/)
-    expect(() => definition.initial({ config: {}, seats: seats.slice(0, 4), randomSeed: 'short' })).toThrow(/five seats/)
     expect(() => definition.initial({
-      config: {}, randomSeed: 'humans',
+      config: { playerCount: 5 }, seats: seats.slice(0, 4), randomSeed: 'short',
+    })).toThrow(/5-player setup requires exactly 5 seats/)
+    expect(() => definition.initial({
+      config: { playerCount: 5 }, randomSeed: 'humans',
       seats: seats.map(seat => ({ ...seat, controller: { type: 'human' as const } })),
-    })).toThrow(/one human seat and four AI seats/)
+    })).toThrow(/either 5 AI seats or one human seat and 4 AI seats/)
+    expect(() => definition.initial({
+      config: { playerCount: 5, humanRole: 'merlin' }, randomSeed: 'all-ai-role',
+      seats: allAiSeats.slice(0, 5),
+    })).toThrow(/humanRole requires exactly one human seat/)
 
     const proposalWindow = definition.pending(state)!
     const leader = seats.find(seat => seat.id === proposalWindow.requiredSeats[0])!
@@ -131,6 +182,58 @@ describe('Avalon definition', () => {
     } else {
       expect(() => humanSpec.validate({ type: 'quest', outcome: 'fail' })).toThrow(/not permitted/)
     }
+  })
+
+  it('applies the six-player role deck, mission sizes, discussion length, and vote threshold', () => {
+    const { definition, event, state } = startedState({ playerCount: 6, humanRole: 'loyal-servant' }, sixSeats)
+    const roles = (event.data as { roles: Record<string, AvalonRole> }).roles
+    expect(roles['you']).toBe('loyal-servant')
+    expect(Object.values(roles).sort()).toEqual([
+      'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'merlin', 'minion',
+    ])
+    expect(definition.view(state)).toMatchObject({
+      playerCount: 6, missionNumber: 1, teamSize: 2, missionSizes: [2, 3, 4, 3, 4],
+    })
+
+    let missionState = state
+    const outcomes = [false, false, true, true] as const
+    const expectedSizes = [2, 3, 4, 3, 4] as const
+    for (const [index, expectedSize] of expectedSizes.entries()) {
+      expect(definition.view(missionState)).toMatchObject({ missionNumber: index + 1, teamSize: expectedSize })
+      if (index < outcomes.length) {
+        const success = outcomes[index]!
+        missionState = definition.reduce(missionState, {
+          type: 'avalon/quest-resolved',
+          data: {
+            number: index + 1,
+            team: sixSeats.slice(0, expectedSize).map(seat => seat.id),
+            failCount: success ? 0 : 1,
+            success,
+          },
+        })
+      }
+    }
+
+    const leader = (definition.view(state) as { leader: SeatId }).leader
+    const proposed = definition.reduce(state, {
+      type: 'avalon/team-proposed', data: { leader, team: ['you', 'ai-1'], direction: 'clockwise' },
+    })
+    const discussed = completeDiscussion(definition, proposed, sixSeats)
+    expect((definition.view(discussed) as { statements: unknown[] }).statements).toHaveLength(6)
+    const voteWindow = definition.pending(discussed)!
+    const tiedVote = definition.resolve({
+      state: discussed, window: voteWindow,
+      actions: new Map(sixSeats.map((seat, index) => [seat.id, { type: 'vote-team', approve: index < 3 }])),
+    })[0]!
+    expect(tiedVote).toMatchObject({ data: { approveCount: 3, rejectCount: 3, approved: false } })
+    const approvedVote = definition.resolve({
+      state: discussed, window: voteWindow,
+      actions: new Map(sixSeats.map((seat, index) => [seat.id, { type: 'vote-team', approve: index < 4 }])),
+    })[0]!
+    expect(approvedVote).toMatchObject({ data: { approveCount: 4, rejectCount: 2, approved: true } })
+    expect(definition.modelPrompt(state, sixSeats[0].id)).toContain('你是 6 人阿瓦隆')
+    expect(definition.modelPrompt(state, sixSeats[0].id)).toContain('2、3、4、3、4；一支队伍获得至少 4 票赞成')
+    expect(definition.modelPrompt(state, sixSeats[0].id)).toContain('5 名非队长依次公开发言')
   })
 
   it('rejects every malformed phase action and exposes only role-permitted choices', () => {
@@ -403,7 +506,10 @@ describe('Avalon definition', () => {
     const fiber = await ctx.plugin(Avalon, { maxStatementChars: 64 })
     expect(ctx.gameDefinitions.require('avalon').configSchema).toMatchObject({
       type: 'object', additionalProperties: false,
-      properties: { humanRole: { enum: ['merlin', 'loyal-servant', 'assassin', 'minion'] } },
+      properties: {
+        playerCount: { enum: [5, 6], default: 5 },
+        humanRole: { enum: ['merlin', 'loyal-servant', 'assassin', 'minion'] },
+      },
     })
     await fiber.dispose()
     expect(() => ctx.gameDefinitions.require('avalon')).toThrow(/unknown game definition/)

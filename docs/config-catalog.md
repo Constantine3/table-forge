@@ -638,7 +638,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/game/game-avalon/src/index.ts:23`](../packages/game/game-avalon/src/index.ts)
+Source: [`packages/game/game-avalon/src/index.ts:28`](../packages/game/game-avalon/src/index.ts)
 
 <a id="deepseek-aidsh-game-controller-agent"></a>
 

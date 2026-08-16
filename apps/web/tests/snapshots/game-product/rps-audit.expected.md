@@ -1,7 +1,7 @@
 - main:
   - button "TABLE FORGE"
   - text: LLM 原生游戏引擎
-  - button "开启回合通知"
+  - button "开启后台回合通知"
   - paragraph: 当前对局
   - heading "剪刀 · 石头 · 布" [level=1]
   - button "新对局"

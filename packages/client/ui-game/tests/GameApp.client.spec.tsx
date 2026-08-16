@@ -128,9 +128,9 @@ describe('generic game product shell', () => {
       requestPermission,
     })
     const bench = mount({ ...baseState, selectedGameId: 'avalon' })
-    fireEvent.click(screen.getByRole('button', { name: '开启回合通知' }))
+    fireEvent.click(screen.getByRole('button', { name: '开启后台回合通知' }))
     expect(requestPermission).toHaveBeenCalledOnce()
-    expect(await screen.findByText('回合通知已开启')).toBeTruthy()
+    expect(await screen.findByText('后台回合通知已开启')).toBeTruthy()
     bench.unmount()
 
     requestPermission.mockClear()
@@ -145,7 +145,7 @@ describe('generic game product shell', () => {
     expect(creation.createMatch).toHaveBeenCalledWith({ gameId: 'avalon', config: {}, seats: [] })
   })
 
-  it('notifies one hidden-page human action window and focuses the game when clicked', () => {
+  it('notifies an unattended human action window once even when it first appeared in the foreground', () => {
     const notifications: Array<{
       title: string
       options: NotificationOptions | undefined
@@ -166,7 +166,8 @@ describe('generic game product shell', () => {
         notifications.push(this)
       }
     })
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
     const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
     const waitingMatch: NonNullable<GameAppState['match']> = {
       id: 'turn-match', gameId: 'avalon', revision: 1, status: 'active',
@@ -182,6 +183,10 @@ describe('generic game product shell', () => {
         window: { id: 'human-window', requiredSeats: ['human'], submittedSeats: [], canAct: true },
       },
     })
+    expect(notifications).toHaveLength(0)
+
+    hasFocus.mockReturnValue(false)
+    fireEvent(window, new Event('blur'))
     expect(notifications).toHaveLength(1)
     expect(notifications[0]).toMatchObject({
       title: '轮到你操作了',
@@ -198,5 +203,33 @@ describe('generic game product shell', () => {
     notifications[0]!.onclick?.()
     expect(focus).toHaveBeenCalledOnce()
     expect(notifications[0]!.close).toHaveBeenCalledOnce()
+  })
+
+  it('reports browsers without the Notification API', () => {
+    vi.stubGlobal('Notification', undefined)
+    mount(baseState)
+    expect(screen.getByText('当前浏览器不支持回合通知')).toBeTruthy()
+  })
+
+  it('reports a browser that grants permission but rejects notification construction', async () => {
+    vi.stubGlobal('Notification', class {
+      static permission: NotificationPermission = 'granted'
+      static requestPermission = vi.fn(() => Promise.resolve<NotificationPermission>('granted'))
+
+      constructor() {
+        throw new Error('notification delivery unavailable')
+      }
+    })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    mount({
+      ...baseState,
+      match: {
+        id: 'delivery-failure', gameId: 'avalon', revision: 1, status: 'active',
+        seats: [{ id: 'human', displayName: '你', controller: { type: 'human' } }],
+        window: { id: 'human-window', requiredSeats: ['human'], submittedSeats: [], canAct: true },
+        blockedSeats: [], game: {},
+      },
+    })
+    expect(await screen.findByText('浏览器未能显示回合通知')).toBeTruthy()
   })
 })

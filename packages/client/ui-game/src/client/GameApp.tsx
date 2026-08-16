@@ -108,6 +108,10 @@ const currentTurnNotificationPermission = (): TurnNotificationPermission => (
   typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
 )
 
+const currentPageIsUnattended = (): boolean => (
+  document.visibilityState !== 'visible' || !document.hasFocus()
+)
+
 const statusLabel = (status: GameRemoteMatchView['status']): string => {
   if (status === 'active') return '进行中'
   if (status === 'blocked') return '需要处理'
@@ -126,6 +130,8 @@ export function GameApp({
   const [notificationPermission, setNotificationPermission] = useState<TurnNotificationPermission>(
     currentTurnNotificationPermission,
   )
+  const [notificationDeliveryFailed, setNotificationDeliveryFailed] = useState(false)
+  const [pageIsUnattended, setPageIsUnattended] = useState(currentPageIsUnattended)
   const notifiedWindow = useRef<string>()
   const activeGameId = match?.gameId ?? selectedGameId
   const game = games.find(candidate => candidate.id === activeGameId)
@@ -141,32 +147,43 @@ export function GameApp({
   }
 
   useEffect(() => {
-    const refreshPermission = (): void => {
+    const refreshBrowserState = (): void => {
       setNotificationPermission(currentTurnNotificationPermission())
+      setPageIsUnattended(currentPageIsUnattended())
     }
-    document.addEventListener('visibilitychange', refreshPermission)
-    return () => { document.removeEventListener('visibilitychange', refreshPermission) }
+    document.addEventListener('visibilitychange', refreshBrowserState)
+    window.addEventListener('blur', refreshBrowserState)
+    window.addEventListener('focus', refreshBrowserState)
+    return () => {
+      document.removeEventListener('visibilitychange', refreshBrowserState)
+      window.removeEventListener('blur', refreshBrowserState)
+      window.removeEventListener('focus', refreshBrowserState)
+    }
   }, [])
 
   useEffect(() => {
     if (match?.status !== 'active' || match.window?.canAct !== true) return
     const key = `${match.id}:${match.window.id}`
     if (notifiedWindow.current === key) return
-    if (document.visibilityState === 'visible') {
-      notifiedWindow.current = key
+    if (!pageIsUnattended) return
+    if (notificationPermission !== 'granted' || typeof Notification === 'undefined') return
+    let notification: Notification
+    try {
+      notification = new Notification('轮到你操作了', {
+        body: '返回 Table Forge 完成当前操作。',
+        tag: `table-forge-turn-${match.id}`,
+      })
+    } catch {
+      setNotificationDeliveryFailed(true)
       return
     }
-    if (notificationPermission !== 'granted' || typeof Notification === 'undefined') return
     notifiedWindow.current = key
-    const notification = new Notification('轮到你操作了', {
-      body: '返回 Table Forge 完成当前操作。',
-      tag: `table-forge-turn-${match.id}`,
-    })
+    setNotificationDeliveryFailed(false)
     notification.onclick = () => {
       window.focus()
       notification.close()
     }
-  }, [match?.id, match?.status, match?.window?.canAct, match?.window?.id, notificationPermission])
+  }, [match?.id, match?.status, match?.window?.canAct, match?.window?.id, notificationPermission, pageIsUnattended])
 
   return (
     <main className={css.app}>
@@ -177,13 +194,19 @@ export function GameApp({
           {notificationPermission === 'default' && <button
             className={css.notificationPermission}
             onClick={requestTurnNotificationPermission}
-          >开启回合通知</button>}
-          {notificationPermission === 'granted'
-            && <span className={css.notificationStatus}>回合通知已开启</span>}
+          >开启后台回合通知</button>}
+          {notificationPermission === 'granted' && !notificationDeliveryFailed
+            && <span className={css.notificationStatus}>后台回合通知已开启</span>}
+          {notificationPermission === 'granted' && notificationDeliveryFailed && <span
+            className={css.notificationStatus}
+            title="请检查浏览器和系统的通知设置"
+          >浏览器未能显示回合通知</span>}
           {notificationPermission === 'denied' && <span
             className={css.notificationStatus}
             title="请在浏览器的网站设置中重新允许通知"
           >回合通知被阻止</span>}
+          {notificationPermission === 'unsupported'
+            && <span className={css.notificationStatus}>当前浏览器不支持回合通知</span>}
         </div>
       </header>
       {game === undefined ? (

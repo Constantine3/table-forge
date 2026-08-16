@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/game.md
-game.md: cb6e3db8fb08d757daa5491c1031bbe06f6b34f8
-game.zh.md: 7c850081c1996e2aec38ffab2e23044fff89255b
+game.md: c6fdd0946c2854ad41cf450bfb8652e3e229fd11
+game.zh.md: 5164906e71a61c3c22912933bec8ec82ae57538e

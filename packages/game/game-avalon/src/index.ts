@@ -1,4 +1,4 @@
-/** Fixed five-player Avalon rules as a deterministic game plugin. @module @deepseek-ai/dsh-game-avalon */
+/** Five- and six-player Avalon rules as a deterministic game plugin. @module @deepseek-ai/dsh-game-avalon */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -7,12 +7,17 @@ import type {
 import z from '@deepseek-ai/schemastery'
 import { createHash } from 'node:crypto'
 
-/** Roles used by the fixed five-player ruleset. */
+/** Roles used by the supported Avalon rulesets. */
 export type AvalonRole = 'merlin' | 'loyal-servant' | 'assassin' | 'minion'
 
-/** Per-match choices accepted by the fixed five-player ruleset. */
+/** Supported Avalon table sizes. */
+export type AvalonPlayerCount = 5 | 6
+
+/** Per-match choices accepted by the Avalon rulesets. */
 export interface AvalonMatchConfig {
-  /** Human role; omission keeps deterministic private random assignment. */
+  /** Number of seats at the table. */
+  readonly playerCount: AvalonPlayerCount
+  /** Role pinned to the single human seat; omission keeps deterministic private random assignment. */
   readonly humanRole?: AvalonRole
 }
 
@@ -59,7 +64,7 @@ interface MissionRecord {
 }
 
 interface AvalonState {
-  readonly seats: readonly [SeatId, SeatId, SeatId, SeatId, SeatId]
+  readonly seats: readonly SeatId[]
   readonly roles: Readonly<Record<string, AvalonRole>>
   readonly phase: 'proposal' | 'discussion' | 'team-vote' | 'quest' | 'evil-discussion' | 'assassination' | 'finished'
   readonly leaderIndex: number
@@ -75,9 +80,22 @@ interface AvalonState {
   readonly assassinationTarget?: SeatId
 }
 
-const MISSION_SIZES = [2, 3, 2, 3, 3] as const
-const ROLE_DECK: readonly AvalonRole[] = ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'minion']
-const AVALON_ROLES = new Set<string>(ROLE_DECK)
+interface AvalonRules {
+  readonly roleDeck: readonly AvalonRole[]
+  readonly missionSizes: readonly [number, number, number, number, number]
+}
+
+const AVALON_RULES: Readonly<Record<AvalonPlayerCount, AvalonRules>> = {
+  5: {
+    roleDeck: ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'minion'],
+    missionSizes: [2, 3, 2, 3, 3],
+  },
+  6: {
+    roleDeck: ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'minion'],
+    missionSizes: [2, 3, 4, 3, 4],
+  },
+}
+const AVALON_ROLES = new Set<string>(['merlin', 'loyal-servant', 'assassin', 'minion'])
 const EVIL_ROLES = new Set<AvalonRole>(['assassin', 'minion'])
 
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -91,8 +109,15 @@ const roleFor = (state: AvalonState, seat: SeatId): AvalonRole => required(state
 
 const proposalFor = (state: AvalonState): Proposal => required(state.proposal, 'the active proposal')
 
+const playerCountFor = (seats: readonly unknown[]): AvalonPlayerCount => {
+  if (seats.length !== 5 && seats.length !== 6) throw new Error('Avalon requires exactly five or six seats')
+  return seats.length
+}
+
+const rulesFor = (state: AvalonState): AvalonRules => AVALON_RULES[playerCountFor(state.seats)]
+
 const missionTeamSize = (state: AvalonState): number => required(
-  MISSION_SIZES[state.missionIndex],
+  rulesFor(state).missionSizes[state.missionIndex],
   `mission ${state.missionIndex + 1}`,
 )
 
@@ -159,6 +184,7 @@ const evilDiscussionSeat = (state: AvalonState): SeatId => required(
 
 const assignment = (
   seats: readonly MatchSeatSpec[],
+  roleDeck: readonly AvalonRole[],
   seed: string,
   humanRole?: AvalonRole,
 ): Readonly<Record<string, AvalonRole>> => {
@@ -168,10 +194,10 @@ const assignment = (
     return comparison === 0 ? left.id.localeCompare(right.id) : comparison
   })
   if (humanRole === undefined) {
-    return Object.fromEntries(ordered.map((seat, index) => [seat.id, required(ROLE_DECK[index], `role ${index + 1}`)]))
+    return Object.fromEntries(ordered.map((seat, index) => [seat.id, required(roleDeck[index], `role ${index + 1}`)]))
   }
   const human = required(seats.find(seat => seat.controller.type === 'human'), 'the human seat')
-  const remainingRoles = [...ROLE_DECK]
+  const remainingRoles = [...roleDeck]
   remainingRoles.splice(remainingRoles.indexOf(humanRole), 1)
   const aiSeats = ordered.filter(seat => seat.id !== human.id)
   return Object.fromEntries([
@@ -227,7 +253,7 @@ const actionFor = (state: AvalonState, seat: MatchSeatSpec, maxStatementChars: n
             team: {
               type: 'array', minItems: teamSize, maxItems: teamSize, uniqueItems: true,
               items: { type: 'string', enum: state.seats },
-              description: '听完其他四名玩家后确定的最终队伍；可以保留初选，也可以更换成员。',
+              description: `听完其他 ${state.seats.length - 1} 名玩家后确定的最终队伍；可以保留初选，也可以更换成员。`,
             },
           } : {}),
         },
@@ -321,6 +347,7 @@ const actionFor = (state: AvalonState, seat: MatchSeatSpec, maxStatementChars: n
 }
 
 const project = (state: AvalonState, seat?: SeatId): GameJson => {
+  const rules = rulesFor(state)
   const successes = state.missions.filter(mission => mission.success).length
   const failures = state.missions.length - successes
   const ownRole = seat === undefined ? undefined : state.roles[seat]
@@ -332,15 +359,17 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
         .map(seatId => ({ seatId, role: roleFor(state, seatId) }))
       : []
   const missionSize = required(
-    MISSION_SIZES[Math.min(state.missionIndex, MISSION_SIZES.length - 1)],
+    rules.missionSizes[Math.min(state.missionIndex, rules.missionSizes.length - 1)],
     `mission ${state.missionIndex + 1}`,
   )
   const evilDiscussionVisible = state.phase === 'finished'
     || (ownRole !== undefined && EVIL_ROLES.has(ownRole))
   return {
     phase: state.phase,
+    playerCount: state.seats.length,
+    missionSizes: rules.missionSizes,
     leader: required(state.seats[state.leaderIndex], 'the current leader'),
-    missionNumber: Math.min(state.missionIndex + 1, MISSION_SIZES.length),
+    missionNumber: Math.min(state.missionIndex + 1, rules.missionSizes.length),
     teamSize: missionSize,
     rejectedTeams: state.rejectedTeams,
     score: { good: successes, evil: failures },
@@ -366,41 +395,57 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
   }
 }
 
-/** Create one fixed five-player Avalon definition.
+/** Create one five- and six-player Avalon definition.
  * @param config - resolved statement limit.
  * @returns configured rules.
  */
 export function createAvalonDefinition(config: Required<Config>): GameDefinition<AvalonState> {
   return {
     id: 'avalon',
-    rulesVersion: 6,
+    rulesVersion: 8,
     configSchema: {
       type: 'object', additionalProperties: false,
       properties: {
+        playerCount: {
+          type: 'integer', enum: [5, 6], default: 5,
+          description: '圆桌席位数；五人局和六人局都支持一名人类参与或全 AI 对局。',
+        },
         humanRole: {
           type: 'string', enum: ['merlin', 'loyal-servant', 'assassin', 'minion'],
-          description: '人类玩家指定身份；省略时由私有随机种子分配。',
+          description: '人类玩家指定身份；只有一名人类席位时可用，省略时由私有随机种子分配。',
         },
       },
     },
     validateConfig(value): GameJson {
       const candidate = value ?? {}
       const record = asRecord(candidate, 'Avalon config')
-      if (Object.keys(record).some(key => key !== 'humanRole')) throw new Error('Avalon config has unexpected fields')
-      if (record.humanRole === undefined) return {}
+      if (Object.keys(record).some(key => key !== 'playerCount' && key !== 'humanRole')) {
+        throw new Error('Avalon config has unexpected fields')
+      }
+      const playerCount = record.playerCount ?? 5
+      if (playerCount !== 5 && playerCount !== 6) throw new Error('Avalon player count must be 5 or 6')
+      if (record.humanRole === undefined) return { playerCount }
       if (typeof record.humanRole !== 'string' || !AVALON_ROLES.has(record.humanRole)) {
         throw new Error('Avalon human role is invalid')
       }
-      return { humanRole: record.humanRole }
+      return { playerCount, humanRole: record.humanRole }
     },
     initial({ config: matchConfig, seats, randomSeed }): readonly GameRuleEvent[] {
-      if (seats.length !== 5) throw new Error('Avalon requires exactly five seats')
-      if (seats.filter(seat => seat.controller.type === 'human').length !== 1
-        || seats.filter(seat => seat.controller.type === 'agent').length !== 4) {
-        throw new Error('Avalon requires one human seat and four AI seats')
+      const resolvedMatchConfig = matchConfig as unknown as AvalonMatchConfig
+      const requestedPlayerCount = resolvedMatchConfig.playerCount
+      if (seats.length !== requestedPlayerCount) {
+        throw new Error(`Avalon ${requestedPlayerCount}-player setup requires exactly ${requestedPlayerCount} seats`)
       }
-      const requestedRole = (matchConfig as AvalonMatchConfig).humanRole
-      const roles = assignment(seats, randomSeed, requestedRole)
+      const humanCount = seats.filter(seat => seat.controller.type === 'human').length
+      const agentCount = seats.filter(seat => seat.controller.type === 'agent').length
+      if ((humanCount !== 0 && humanCount !== 1) || humanCount + agentCount !== requestedPlayerCount) {
+        throw new Error(`Avalon ${requestedPlayerCount}-player setup requires either ${requestedPlayerCount} AI seats or one human seat and ${requestedPlayerCount - 1} AI seats`)
+      }
+      const requestedRole = resolvedMatchConfig.humanRole
+      if (requestedRole !== undefined && humanCount !== 1) {
+        throw new Error('Avalon humanRole requires exactly one human seat')
+      }
+      const roles = assignment(seats, AVALON_RULES[requestedPlayerCount].roleDeck, randomSeed, requestedRole)
       const leaderIndex = Number.parseInt(digest(`avalon:leader:${randomSeed}`).slice(0, 8), 16) % seats.length
       return [{ type: 'avalon/started', data: { seats: seats.map(seat => seat.id), roles, leaderIndex } }]
     },
@@ -590,7 +635,10 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
     },
     view: project,
     modelPrompt(state, seat): string {
-      return `你是五人阿瓦隆中的席位 ${seat}。角色包括梅林、刺客、两名亚瑟的忠臣和一名莫德雷德的爪牙。五次任务的队伍人数依次为 2、3、2、3、3；一支队伍获得至少三票赞成才会通过。队伍投票匿名提交，结算只公开赞成票数和否决票数，不公开任何席位的选择。每次队伍投票结束后，队长顺时针交给下一席。队伍被否决时，连续否决计数增加一；任一队伍通过时，该计数立即清零，因此早先的否决不会永久占用五次机会。只有连续五支队伍都被否决或累计三次任务失败时，邪方才立即获胜。三次任务成功后，邪方沿圆桌顺时针依次私密发言，刺客最后总结，再由刺客选择梅林目标。忠臣和梅林执行任务时只能选择成功。队长先提交初选队伍并指定顺时针或逆时针发言方向，此时队长不发言；与队长相邻的席位沿指定方向开始，四名非队长依次公开发言。听完四人发言后，队长最后归票发言，并在同一个动作中提交最终队伍；最终队伍可以与初选相同，也可以更换成员，随后五名玩家只对这支最终队伍投票。你的所有思考、分析、自然语言输出、公开发言和邪方私密发言必须使用简体中文；JSON 属性名、动作类型和席位 id 必须严格遵循动作 schema。公开发言不得泄露或引用私有身份知识；邪方私密发言可以使用规则投影提供的身份知识。规则引擎拥有最终裁决权。当前观察：${JSON.stringify(project(state, seat))}`
+      const rules = rulesFor(state)
+      const loyalServants = rules.roleDeck.filter(role => role === 'loyal-servant').length
+      const approvalVotes = Math.floor(state.seats.length / 2) + 1
+      return `你是 ${state.seats.length} 人阿瓦隆中的席位 ${seat}。角色包括梅林、刺客、${loyalServants} 名亚瑟的忠臣和一名莫德雷德的爪牙。五次任务的队伍人数依次为 ${rules.missionSizes.join('、')}；一支队伍获得至少 ${approvalVotes} 票赞成才会通过。队伍投票匿名提交，结算只公开赞成票数和否决票数，不公开任何席位的选择。每次队伍投票结束后，队长顺时针交给下一席。队伍被否决时，连续否决计数增加一；任一队伍通过时，该计数立即清零，因此早先的否决不会永久占用五次机会。只有连续五支队伍都被否决或累计三次任务失败时，邪方才立即获胜。三次任务成功后，邪方沿圆桌顺时针依次私密发言，刺客最后总结，再由刺客选择梅林目标。忠臣和梅林执行任务时只能选择成功。队长先提交初选队伍并指定顺时针或逆时针发言方向，此时队长不发言；与队长相邻的席位沿指定方向开始，${state.seats.length - 1} 名非队长依次公开发言。听完其他玩家发言后，队长最后归票发言，并在同一个动作中提交最终队伍；最终队伍可以与初选相同，也可以更换成员，随后所有玩家只对这支最终队伍投票。你的所有思考、分析、自然语言输出、公开发言和邪方私密发言必须使用简体中文；JSON 属性名、动作类型和席位 id 必须严格遵循动作 schema。公开发言不得泄露或引用私有身份知识；邪方私密发言可以使用规则投影提供的身份知识。规则引擎拥有最终裁决权。当前观察：${JSON.stringify(project(state, seat))}`
     },
   }
 }

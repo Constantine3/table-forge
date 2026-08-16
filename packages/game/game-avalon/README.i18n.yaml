@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/game/game-avalon/README.md
-README.md: fb3c182bc8e10982b67ecac5345bdbe8c14ecbdd
-README.zh.md: 5c736919ebe9488b54bc9dbd72d5787606d44093
+README.md: 3eaf0300267f01e489f245e5104b477cd743cfa9
+README.zh.md: d80781796d77664829087068941e682833300dde

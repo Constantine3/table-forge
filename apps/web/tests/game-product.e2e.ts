@@ -72,7 +72,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   })
   await legacyPersistence.create({
     id: MatchId(AVALON_EVIL_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 8, config: { playerCount: 6, humanRole: 'assassin' }, createdAt: 2,
+    gameId: 'avalon', rulesVersion: 10, config: { playerCount: 6, humanRole: 'assassin' }, createdAt: 2,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
       ...[1, 2, 3, 4, 5].map(index => ({
@@ -230,10 +230,11 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   await page.getByRole('button', { name: /阿瓦隆/ }).click()
   await page.getByRole('heading', { name: '阿瓦隆', exact: true }).waitFor()
   await page.getByRole('button', { name: '全 AI 对局', exact: true }).click()
-  expect(await page.getByRole('combobox').count()).toBe(7)
-  expect(await page.getByLabel('游戏人数').inputValue()).toBe('6')
+  await page.getByLabel('游戏人数').selectOption('7')
+  expect(await page.getByRole('combobox').count()).toBe(8)
+  expect(await page.getByLabel('游戏人数').inputValue()).toBe('7')
   expect(await page.getByLabel('你的角色').count()).toBe(0)
-  expect(await page.getByLabel('AI 席位 6').count()).toBe(1)
+  expect(await page.getByLabel('AI 席位 7').count()).toBe(1)
   await compareOrRefreshGolden(AVALON_SETUP_EXPECTED, await captureStableAria(page, 'main', harnessHome), MODE)
 
   await page.reload()
@@ -243,7 +244,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   const discussionPersistence = new SqliteGamePersistence(join(harnessHome, 'games.sqlite'))
   await discussionPersistence.create({
     id: MatchId(AVALON_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 8, config: { playerCount: 5 }, createdAt: 3,
+    gameId: 'avalon', rulesVersion: 10, config: { playerCount: 5 }, createdAt: 3,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
       ...[1, 2, 3, 4].map(index => ({
@@ -322,9 +323,12 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   expect(JSON.stringify(evilRequest?.body)).toContain('邪方沿圆桌顺时针依次私密发言')
   expect(JSON.stringify(evilRequest?.body)).toContain('任一队伍通过时，该计数立即清零')
   expect(JSON.stringify(evilRequest?.body)).toContain('结算只公开赞成票数和否决票数')
+  expect(JSON.stringify(evilRequest?.body)).toContain('不得根据汇总票型断言某个席位投了赞成或否决')
+  expect(JSON.stringify(evilRequest?.body)).toContain('隐藏身份和让任务成功只能是达成胜利的手段')
+  expect(JSON.stringify(evilRequest?.body)).toContain('区分公开事实与推断')
   expect(JSON.stringify(evilRequest?.body)).toContain('队长最后归票发言，并在同一个动作中提交最终队伍')
   expect(JSON.stringify(evilRequest?.body)).toContain('你是 6 人阿瓦隆')
-  expect(JSON.stringify(evilRequest?.body)).toContain('2、3、4、3、4；一支队伍获得至少 4 票赞成')
+  expect(JSON.stringify(evilRequest?.body)).toContain('2、3、4、3、4，任务失败所需的失败票数依次为 1、1、1、1、1')
   await page.getByPlaceholder('总结讨论并说明刺杀判断').fill('我同意刺杀 AI 2。')
   await page.getByRole('button', { name: '提交刺客总结', exact: true }).click()
   await page.getByRole('heading', { name: '刺杀梅林', exact: true }).waitFor()

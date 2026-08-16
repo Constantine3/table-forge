@@ -11,7 +11,7 @@ type SurfaceProps = GameSurfaceOwnerProps
 
 type AvalonSpeechDirection = 'clockwise' | 'counterclockwise'
 type AvalonRole = 'merlin' | 'loyal-servant' | 'assassin' | 'minion'
-type AvalonPlayerCount = 5 | 6
+type AvalonPlayerCount = 5 | 6 | 7
 type AvalonMode = 'human-ai' | 'ai-only'
 
 interface AvalonProposal { leader: string; team: string[]; direction: AvalonSpeechDirection }
@@ -28,9 +28,11 @@ interface AvalonView {
   phase: 'proposal' | 'discussion' | 'team-vote' | 'quest' | 'evil-discussion' | 'assassination' | 'finished'
   playerCount: AvalonPlayerCount
   missionSizes: [number, number, number, number, number]
+  missionFailThresholds: [number, number, number, number, number]
   leader: string
   missionNumber: number
   teamSize: number
+  failThreshold: number
   rejectedTeams: number
   score: { good: number; evil: number }
   proposal: AvalonProposal | null
@@ -94,11 +96,11 @@ const seatPosition = (index: number, count: number): { left: string; top: string
 /** Render the Avalon choice in the game catalog. */
 export function AvalonCatalogItem({ selectGame }: CatalogProps) {
   return <button className={css.catalogCard} onClick={() => { selectGame('avalon') }}>
-    <span>五至六人 · 隐藏身份</span><strong>阿瓦隆</strong><small>亲自参与，或观看 AI 在任务与谎言中推演</small>
+    <span>五至七人 · 隐藏身份</span><strong>阿瓦隆</strong><small>亲自参与，或观看 AI 在任务与谎言中推演</small>
   </button>
 }
 
-/** Render five- or six-player Avalon setup and the active board. */
+/** Render five-, six-, or seven-player Avalon setup and the active board. */
 export function AvalonSurface({
   match,
   providers,
@@ -110,13 +112,16 @@ export function AvalonSurface({
 }: SurfaceProps) {
   const [mode, setMode] = useState<AvalonMode>('human-ai')
   const [playerCount, setPlayerCount] = useState<AvalonPlayerCount>(6)
-  const [providerIds, setProviderIds] = useState<string[]>(['', '', '', '', '', ''])
+  const [providerIds, setProviderIds] = useState<string[]>(['', '', '', '', '', '', ''])
   const [humanRole, setHumanRole] = useState<AvalonRole | ''>('')
   const [team, setTeam] = useState<string[]>([])
   const [finalTeam, setFinalTeam] = useState<string[] | undefined>()
   const [direction, setDirection] = useState<AvalonSpeechDirection | ''>('')
   const [statement, setStatement] = useState('')
   const aiSeatCount = playerCount - (mode === 'human-ai' ? 1 : 0)
+  const evilCount = playerCount === 7 ? 3 : 2
+  const loyalServantCount = playerCount - evilCount - 1
+  const minionCount = evilCount - 1
   const selectedProviders = providerIds.slice(0, aiSeatCount).map(id => providerAt(providers, id))
   const create = (): void => {
     /* v8 ignore next -- the setup button is disabled while any AI provider is unavailable. */
@@ -148,7 +153,7 @@ export function AvalonSurface({
   }
 
   if (match === undefined) return <section className={css.setup}>
-    <p className={css.eyebrow}>五至六人基础局</p><h1>阿瓦隆</h1>
+    <p className={css.eyebrow}>五至七人基础局</p><h1>阿瓦隆</h1>
     <p className={css.lead}>选择参与方式和圆桌人数，并为每名 AI 分别选择模型提供方。</p>
     <div className={css.segmented}>
       <button data-active={mode === 'human-ai'} onClick={() => { setMode('human-ai') }}>你与 AI</button>
@@ -160,10 +165,11 @@ export function AvalonSurface({
       }}>
         <option value={5}>五人局</option>
         <option value={6}>六人局</option>
+        <option value={7}>七人局</option>
       </select>
     </label>
     <div className={css.roles}>
-      <span>梅林</span><span>刺客</span><span>忠臣 × {playerCount - 3}</span><span>爪牙</span>
+      <span>梅林</span><span>刺客</span><span>忠臣 × {loyalServantCount}</span><span>爪牙 × {minionCount}</span>
     </div>
     {mode === 'human-ai' && <label>你的角色
       <select aria-label="你的角色" value={humanRole} onChange={(event) => {
@@ -244,16 +250,21 @@ export function AvalonSurface({
       }).join('、')}</p>}
     </aside>}
     <div className={css.tableLayout}>
-      <div className={css.missions} aria-label="任务进度">{game.missionSizes.map((missionSize, index) => <div
-        key={index}
-        data-result={game.missions[index]?.success === true
-          ? 'success'
-          : game.missions[index]?.success === false ? 'fail' : 'pending'}
-      ><span>{index + 1}</span><strong>{missionSize} 人</strong>
-        {game.missions[index] !== undefined && <small>{game.missions[index].success
-          ? '成功'
-          : `失败 · ${game.missions[index].failCount} 票`}</small>}
-      </div>)}</div>
+      <div className={css.missions} aria-label="任务进度">{game.missionSizes.map((missionSize, index) => {
+        const mission = game.missions[index]
+        const failThreshold = game.missionFailThresholds[index]
+        if (failThreshold === undefined) throw new Error(`Avalon mission ${index + 1} has no failure threshold`)
+        return <div
+          key={index}
+          data-result={mission?.success === true ? 'success' : mission?.success === false ? 'fail' : 'pending'}
+        ><span>{index + 1}</span><strong>{missionSize} 人</strong>
+          {(mission !== undefined || failThreshold > 1) && <small>{mission === undefined
+            ? `需 ${failThreshold} 票失败`
+            : `${mission.success ? '成功' : `失败 · ${mission.failCount} 票`}${failThreshold > 1
+              ? ` · 门槛 ${failThreshold} 票`
+              : ''}`}</small>}
+        </div>
+      })}</div>
       <div className={css.tableColumn}>
         <p className={css.rotationHint}>队长轮换顺序（顺时针）</p>
         <div className={css.seats} data-layout="circle">{match.seats.map((seat, index) => <button
@@ -381,7 +392,7 @@ export function AvalonSurface({
       </div>
     </div>}
     {canAct && game.phase === 'quest' && <div className={css.action}>
-      <h2>执行任务</h2><p>任务动作会保持封存，结算只公开失败票数量。</p>
+      <h2>执行任务</h2><p>任务动作会保持封存，结算只公开失败票数量；本轮至少 {game.failThreshold} 票失败才会令任务失败。</p>
       <div className={css.voteButtons}>
         {schema?.properties?.outcome?.enum?.includes('fail') === true
           && <button disabled={busy} onClick={() => { submit({ type: 'quest', outcome: 'fail' }) }}>令任务失败</button>}

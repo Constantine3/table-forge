@@ -17,7 +17,8 @@ const seats = [
 ]
 const publicGame = {
   phase: 'proposal', playerCount: 5, missionSizes: [2, 3, 2, 3, 3],
-  leader: 'human', missionNumber: 1, teamSize: 2, rejectedTeams: 0,
+  missionFailThresholds: [1, 1, 1, 1, 1],
+  leader: 'human', missionNumber: 1, teamSize: 2, failThreshold: 1, rejectedTeams: 0,
   score: { good: 0, evil: 0 }, proposal: null, statements: [], teamVotes: [], missions: [],
 } as const
 const game = {
@@ -69,6 +70,7 @@ describe('Avalon game UI contribution', () => {
     expect(screen.getAllByRole('combobox')).toHaveLength(7)
     expect(screen.getByLabelText('游戏人数')).toHaveProperty('value', '6')
     expect(screen.getByText('忠臣 × 3')).toBeTruthy()
+    expect(screen.getByText('爪牙 × 1')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('你的角色'), { target: { value: 'assassin' } })
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
     const request = actions.createMatch.mock.calls[0]![0]
@@ -80,7 +82,7 @@ describe('Avalon game UI contribution', () => {
     })))
   })
 
-  it('creates five- or six-player all-AI tables without a human role', () => {
+  it('creates five-, six-, or seven-player all-AI tables without a human role', () => {
     const actions = operations()
     render(<AvalonSurface {...props(undefined, actions)} />)
     fireEvent.click(screen.getByRole('button', { name: '全 AI 对局' }))
@@ -89,13 +91,18 @@ describe('Avalon game UI contribution', () => {
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '5' } })
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(5)
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '6' } })
+    expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(6)
+    fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '7' } })
+    expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(7)
+    expect(screen.getByText('忠臣 × 3')).toBeTruthy()
+    expect(screen.getByText('爪牙 × 2')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
 
     const request = actions.createMatch.mock.calls[0]![0]
-    expect(request).toMatchObject({ gameId: 'avalon', config: { playerCount: 6 } })
-    expect(request.seats).toHaveLength(6)
+    expect(request).toMatchObject({ gameId: 'avalon', config: { playerCount: 7 } })
+    expect(request.seats).toHaveLength(7)
     expect(request.seats.every(seat => seat.controller.type === 'agent')).toBe(true)
-    expect(request.seats.map(seat => seat.id)).toEqual(['ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5', 'ai-6'])
+    expect(request.seats.map(seat => seat.id)).toEqual(['ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5', 'ai-6', 'ai-7'])
   })
 
   it('builds a proposal from the seat-scoped action schema', () => {
@@ -159,24 +166,29 @@ describe('Avalon game UI contribution', () => {
       .every(option => option.textContent?.includes('当前不可用') ?? false)).toBe(true)
   })
 
-  it('renders all six seats around the circle and uses the six-player mission table', () => {
-    const sixPlayerSeats = [
+  it('renders all seven seats around the circle and labels the fourth mission threshold', () => {
+    const sevenPlayerSeats = [
       ...seats,
       { id: 'ai-5', displayName: 'AI 5', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
+      { id: 'ai-6', displayName: 'AI 6', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
     ]
     const match: GameRemoteMatchView = {
-      id: 'six', gameId: 'avalon', revision: 1, status: 'active', seats: sixPlayerSeats,
+      id: 'seven', gameId: 'avalon', revision: 1, status: 'active', seats: sevenPlayerSeats,
       window: { id: 'wait', requiredSeats: [], submittedSeats: [], canAct: false },
       blockedSeats: [],
       game: {
-        ...publicGame, playerCount: 6, missionSizes: [2, 3, 4, 3, 4],
+        ...publicGame,
+        playerCount: 7,
+        missionSizes: [2, 3, 3, 4, 4],
+        missionFailThresholds: [1, 1, 1, 2, 1],
       },
     }
     const view = render(<AvalonSurface {...(props(match) as Parameters<typeof AvalonSurface>[0])} />)
     const roundTable = view.container.querySelector('[data-layout="circle"]')!
-    expect(roundTable.querySelectorAll('[data-position]')).toHaveLength(6)
+    expect(roundTable.querySelectorAll('[data-position]')).toHaveLength(7)
     expect(screen.getAllByText('4 人')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: /圆桌成员AI 5/ }).getAttribute('style')).toMatch(/left:|top:/)
+    expect(screen.getByText('需 2 票失败')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /圆桌成员AI 6/ }).getAttribute('style')).toMatch(/left:|top:/)
   })
 
   it('renders mission, identity, proposal, and anonymous vote patterns', () => {

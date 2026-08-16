@@ -3,7 +3,7 @@
   - text: LLM 原生游戏引擎
   - button "开启后台回合通知"
   - button "← 返回游戏列表"
-  - paragraph: 五至六人基础局
+  - paragraph: 五至七人基础局
   - heading "阿瓦隆" [level=1]
   - paragraph: 选择参与方式和圆桌人数，并为每名 AI 分别选择模型提供方。
   - button "你与 AI"
@@ -11,8 +11,9 @@
   - text: 游戏人数
   - combobox "游戏人数":
     - option "五人局"
-    - option "六人局" [selected]
-  - text: 梅林 刺客 忠臣 × 3 爪牙 AI 席位 1
+    - option "六人局"
+    - option "七人局" [selected]
+  - text: 梅林 刺客 忠臣 × 3 爪牙 × 2 AI 席位 1
   - combobox "AI 席位 1":
     - option "DeepSeek Self Deployment" [selected]
     - option "Hy3 TokenHub"
@@ -34,6 +35,10 @@
     - option "Hy3 TokenHub"
   - text: AI 席位 6
   - combobox "AI 席位 6":
+    - option "DeepSeek Self Deployment" [selected]
+    - option "Hy3 TokenHub"
+  - text: AI 席位 7
+  - combobox "AI 席位 7":
     - option "DeepSeek Self Deployment" [selected]
     - option "Hy3 TokenHub"
   - button "进入圆桌"

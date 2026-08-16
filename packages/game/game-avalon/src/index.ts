@@ -1,4 +1,4 @@
-/** Five- and six-player Avalon rules as a deterministic game plugin. @module @deepseek-ai/dsh-game-avalon */
+/** Five-, six-, and seven-player Avalon rules as a deterministic game plugin. @module @deepseek-ai/dsh-game-avalon */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 export type AvalonRole = 'merlin' | 'loyal-servant' | 'assassin' | 'minion'
 
 /** Supported Avalon table sizes. */
-export type AvalonPlayerCount = 5 | 6
+export type AvalonPlayerCount = 5 | 6 | 7
 
 /** Per-match choices accepted by the Avalon rulesets. */
 export interface AvalonMatchConfig {
@@ -83,16 +83,26 @@ interface AvalonState {
 interface AvalonRules {
   readonly roleDeck: readonly AvalonRole[]
   readonly missionSizes: readonly [number, number, number, number, number]
+  readonly missionFailThresholds: readonly [number, number, number, number, number]
 }
 
 const AVALON_RULES: Readonly<Record<AvalonPlayerCount, AvalonRules>> = {
   5: {
     roleDeck: ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'minion'],
     missionSizes: [2, 3, 2, 3, 3],
+    missionFailThresholds: [1, 1, 1, 1, 1],
   },
   6: {
     roleDeck: ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'minion'],
     missionSizes: [2, 3, 4, 3, 4],
+    missionFailThresholds: [1, 1, 1, 1, 1],
+  },
+  7: {
+    roleDeck: [
+      'merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'minion', 'minion',
+    ],
+    missionSizes: [2, 3, 3, 4, 4],
+    missionFailThresholds: [1, 1, 1, 2, 1],
   },
 }
 const AVALON_ROLES = new Set<string>(['merlin', 'loyal-servant', 'assassin', 'minion'])
@@ -110,7 +120,9 @@ const roleFor = (state: AvalonState, seat: SeatId): AvalonRole => required(state
 const proposalFor = (state: AvalonState): Proposal => required(state.proposal, 'the active proposal')
 
 const playerCountFor = (seats: readonly unknown[]): AvalonPlayerCount => {
-  if (seats.length !== 5 && seats.length !== 6) throw new Error('Avalon requires exactly five or six seats')
+  if (seats.length !== 5 && seats.length !== 6 && seats.length !== 7) {
+    throw new Error('Avalon requires exactly five, six, or seven seats')
+  }
   return seats.length
 }
 
@@ -119,6 +131,11 @@ const rulesFor = (state: AvalonState): AvalonRules => AVALON_RULES[playerCountFo
 const missionTeamSize = (state: AvalonState): number => required(
   rulesFor(state).missionSizes[state.missionIndex],
   `mission ${state.missionIndex + 1}`,
+)
+
+const missionFailThreshold = (state: AvalonState): number => required(
+  rulesFor(state).missionFailThresholds[state.missionIndex],
+  `mission ${state.missionIndex + 1} fail threshold`,
 )
 
 const validatedTeam = (
@@ -362,15 +379,21 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
     rules.missionSizes[Math.min(state.missionIndex, rules.missionSizes.length - 1)],
     `mission ${state.missionIndex + 1}`,
   )
+  const failThreshold = required(
+    rules.missionFailThresholds[Math.min(state.missionIndex, rules.missionFailThresholds.length - 1)],
+    `mission ${state.missionIndex + 1} fail threshold`,
+  )
   const evilDiscussionVisible = state.phase === 'finished'
     || (ownRole !== undefined && EVIL_ROLES.has(ownRole))
   return {
     phase: state.phase,
     playerCount: state.seats.length,
     missionSizes: rules.missionSizes,
+    missionFailThresholds: rules.missionFailThresholds,
     leader: required(state.seats[state.leaderIndex], 'the current leader'),
     missionNumber: Math.min(state.missionIndex + 1, rules.missionSizes.length),
     teamSize: missionSize,
+    failThreshold,
     rejectedTeams: state.rejectedTeams,
     score: { good: successes, evil: failures },
     proposal: (state.proposal ?? null) as unknown as GameJson,
@@ -395,20 +418,81 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
   }
 }
 
-/** Create one five- and six-player Avalon definition.
+const factionStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
+  const role = roleFor(state, seat)
+  if (role === 'merlin') {
+    return '你的善方目标是完成三次任务并让梅林躲过刺杀。利用已知邪方身份引导安全队伍，但不得只为隐藏梅林而故意放过你明知危险的队伍；公开表达必须能由公开信息合理支撑。'
+  }
+  if (role === 'loyal-servant') {
+    return '你的善方目标是完成三次任务并帮助梅林隐藏身份。你没有额外身份知识，应根据组队、发言、匿名票型和任务结果持续比较多种身份假设。'
+  }
+  return '你的邪方目标是取得三次任务失败、促成连续五次队伍否决，或在善方三次任务成功后刺中梅林。隐藏身份和让任务成功只能是达成胜利的手段，不能替代胜利目标。'
+}
+
+const evilQuestStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
+  const proposal = proposalFor(state)
+  const leaderIndex = state.seats.indexOf(proposal.leader)
+  if (leaderIndex === -1) throw new Error(`Avalon proposal leader '${proposal.leader}' is not seated`)
+  const clockwiseAfterLeader = [
+    ...state.seats.slice(leaderIndex + 1),
+    ...state.seats.slice(0, leaderIndex + 1),
+  ]
+  const evilTeam = clockwiseAfterLeader.filter(candidate => (
+    proposal.team.includes(candidate) && EVIL_ROLES.has(roleFor(state, candidate))
+  ))
+  const threshold = missionFailThreshold(state)
+  const successes = state.missions.filter(mission => mission.success).length
+  const failures = state.missions.length - successes
+  const scoreGuidance = failures === 2 && evilTeam.length >= threshold
+    ? '邪方已经取得两次任务失败；本轮达到失败门槛会立即获胜，应确保所需失败票全部提交。'
+    : successes === 2 && evilTeam.length >= threshold
+      ? '善方已经取得两次任务成功；若本轮失败票未达门槛，对局会立即进入刺杀。不得只为维持伪装而放行第三次成功；只有根据公开时间线判断立即刺杀梅林的胜率明确更高时，才选择成功。'
+      : ''
+  if (evilTeam.length < threshold) {
+    return `${scoreGuidance}本轮有 ${evilTeam.length} 名邪方在队，少于 ${threshold} 票失败门槛；单独提交失败不能阻止任务成功，却会公开增加匿名失败票数。除非有明确的误导收益，否则应提交成功。`
+  }
+  const designated = evilTeam.slice(0, threshold)
+  const ownAssignment = designated.includes(seat) ? '失败' : '成功'
+  return `${scoreGuidance}失败票直接推进邪方胜利，成功票只用于有明确后续收益的伪装。若决定破坏，本轮在队邪方按队长下一席起的顺时针顺序为 ${evilTeam.join('、')}；由 ${designated.join('、')} 提交失败，其余在队邪方提交成功，避免少票或多余失败票。按此协调约定，你应提交${ownAssignment}。`
+}
+
+const phaseStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
+  switch (state.phase) {
+    case 'proposal':
+      return '当前是组队阶段。根据阵营目标、历史队伍与失败票数选择初选队伍；任务成功不等于队内全员善方，队长是否把自己选入也不能单独证明身份。'
+    case 'discussion':
+      return '当前是投票前发言阶段。公开发言可以诈唬，不是身份事实或任务承诺；评价初选队伍并回应已有发言。队长最后发言时必须重新判断并提交最终队伍。'
+    case 'team-vote':
+      return state.rejectedTeams === 4
+        ? '当前是匿名队伍投票，且此前已有四次连续否决；本轮否决会让邪方立即获胜。只根据最终队伍是否推进你的阵营目标投票，不得把任务失败当作低成本试探。'
+        : '当前是匿名队伍投票。只根据最终队伍是否推进你的阵营目标投票；任务失败会直接推进邪方胜利，不能当作低成本试探。'
+    case 'quest':
+      return EVIL_ROLES.has(roleFor(state, seat))
+        ? evilQuestStrategyPrompt(state, seat)
+        : '当前是任务执行阶段。你的角色只能提交成功；记住任务结果不会公开个人动作。'
+    case 'evil-discussion':
+      return '当前是刺杀前邪方私密讨论。区分公开事实与推断，结合每名善方玩家判断队伍的准确度、引导方向和隐藏信息的克制程度提出梅林候选；匿名票型不能用来断言具名玩家的选择。'
+    case 'assassination':
+      return '当前是刺杀阶段。综合全部公开时间线与邪方密谈选择最可能的梅林；重点比较谁持续避开邪方或准确引导安全队伍但又刻意隐藏依据，不要只选择最受信任、最活跃或最后发言的人。'
+    case 'finished':
+      return '对局已经结束，无需提交新动作。'
+  }
+}
+
+/** Create one five-, six-, and seven-player Avalon definition.
  * @param config - resolved statement limit.
  * @returns configured rules.
  */
 export function createAvalonDefinition(config: Required<Config>): GameDefinition<AvalonState> {
   return {
     id: 'avalon',
-    rulesVersion: 8,
+    rulesVersion: 10,
     configSchema: {
       type: 'object', additionalProperties: false,
       properties: {
         playerCount: {
-          type: 'integer', enum: [5, 6], default: 5,
-          description: '圆桌席位数；五人局和六人局都支持一名人类参与或全 AI 对局。',
+          type: 'integer', enum: [5, 6, 7], default: 5,
+          description: '圆桌席位数；五人局、六人局和七人局都支持一名人类参与或全 AI 对局。',
         },
         humanRole: {
           type: 'string', enum: ['merlin', 'loyal-servant', 'assassin', 'minion'],
@@ -423,7 +507,9 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
         throw new Error('Avalon config has unexpected fields')
       }
       const playerCount = record.playerCount ?? 5
-      if (playerCount !== 5 && playerCount !== 6) throw new Error('Avalon player count must be 5 or 6')
+      if (playerCount !== 5 && playerCount !== 6 && playerCount !== 7) {
+        throw new Error('Avalon player count must be 5, 6, or 7')
+      }
       if (record.humanRole === undefined) return { playerCount }
       if (typeof record.humanRole !== 'string' || !AVALON_ROLES.has(record.humanRole)) {
         throw new Error('Avalon human role is invalid')
@@ -619,7 +705,12 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
         }).length
         return [{
           type: 'avalon/quest-resolved',
-          data: { number: state.missionIndex + 1, team: proposal.team, failCount, success: failCount === 0 },
+          data: {
+            number: state.missionIndex + 1,
+            team: proposal.team,
+            failCount,
+            success: failCount < missionFailThreshold(state),
+          },
         }]
       }
       if (state.phase === 'assassination') {
@@ -637,8 +728,21 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
     modelPrompt(state, seat): string {
       const rules = rulesFor(state)
       const loyalServants = rules.roleDeck.filter(role => role === 'loyal-servant').length
+      const minions = rules.roleDeck.filter(role => role === 'minion').length
       const approvalVotes = Math.floor(state.seats.length / 2) + 1
-      return `你是 ${state.seats.length} 人阿瓦隆中的席位 ${seat}。角色包括梅林、刺客、${loyalServants} 名亚瑟的忠臣和一名莫德雷德的爪牙。五次任务的队伍人数依次为 ${rules.missionSizes.join('、')}；一支队伍获得至少 ${approvalVotes} 票赞成才会通过。队伍投票匿名提交，结算只公开赞成票数和否决票数，不公开任何席位的选择。每次队伍投票结束后，队长顺时针交给下一席。队伍被否决时，连续否决计数增加一；任一队伍通过时，该计数立即清零，因此早先的否决不会永久占用五次机会。只有连续五支队伍都被否决或累计三次任务失败时，邪方才立即获胜。三次任务成功后，邪方沿圆桌顺时针依次私密发言，刺客最后总结，再由刺客选择梅林目标。忠臣和梅林执行任务时只能选择成功。队长先提交初选队伍并指定顺时针或逆时针发言方向，此时队长不发言；与队长相邻的席位沿指定方向开始，${state.seats.length - 1} 名非队长依次公开发言。听完其他玩家发言后，队长最后归票发言，并在同一个动作中提交最终队伍；最终队伍可以与初选相同，也可以更换成员，随后所有玩家只对这支最终队伍投票。你的所有思考、分析、自然语言输出、公开发言和邪方私密发言必须使用简体中文；JSON 属性名、动作类型和席位 id 必须严格遵循动作 schema。公开发言不得泄露或引用私有身份知识；邪方私密发言可以使用规则投影提供的身份知识。规则引擎拥有最终裁决权。当前观察：${JSON.stringify(project(state, seat))}`
+      return [
+        `你是 ${state.seats.length} 人阿瓦隆中的席位 ${seat}。角色包括梅林、${loyalServants} 名亚瑟的忠臣、刺客和 ${minions} 名莫德雷德的爪牙。`,
+        `五次任务的队伍人数依次为 ${rules.missionSizes.join('、')}，任务失败所需的失败票数依次为 ${rules.missionFailThresholds.join('、')}；一支队伍获得至少 ${approvalVotes} 票赞成才会通过。`,
+        '任务失败票匿名提交，达到当轮门槛时任务失败，未达到时任务成功。任务记录中的失败票数是匿名失败动作的准确总数；只有邪方能提交失败，因此正数证明队内至少有同等数量的邪方，但不公开是谁。任务成功只说明失败票未达门槛，不证明队内全员属于善方。',
+        '队伍投票匿名提交，结算只公开赞成票数和否决票数，不公开任何席位的选择。除你自己的已提交选择外，不得根据汇总票型断言某个席位投了赞成或否决。',
+        '每次队伍投票结束后，队长顺时针交给下一席。队伍被否决时，连续否决计数增加一；任一队伍通过时，该计数立即清零，因此早先的否决不会永久占用五次机会。只有连续五支队伍都被否决或累计三次任务失败时，邪方才立即获胜。',
+        '三次任务成功后，邪方沿圆桌顺时针依次私密发言，刺客最后总结，再由刺客选择梅林目标。忠臣和梅林执行任务时只能选择成功。',
+        `队长先提交初选队伍并指定顺时针或逆时针发言方向，此时队长不发言；与队长相邻的席位沿指定方向开始，${state.seats.length - 1} 名非队长依次公开发言。听完其他玩家发言后，队长最后归票发言，并在同一个动作中提交最终队伍；最终队伍可以与初选相同，也可以更换成员，随后所有玩家只对这支最终队伍投票。`,
+        factionStrategyPrompt(state, seat),
+        phaseStrategyPrompt(state, seat),
+        '你的所有思考、分析、自然语言输出、公开发言和邪方私密发言必须使用简体中文；JSON 属性名、动作类型和席位 id 必须严格遵循动作 schema。公开发言不得泄露或引用私有身份知识；邪方私密发言可以使用规则投影提供的身份知识。规则引擎拥有最终裁决权。',
+        `当前观察：${JSON.stringify(project(state, seat))}`,
+      ].join('')
     },
   }
 }

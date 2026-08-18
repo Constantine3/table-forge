@@ -638,7 +638,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/game/game-avalon/src/index.ts:28`](../packages/game/game-avalon/src/index.ts)
+Source: [`packages/game/game-avalon/src/index.ts:48`](../packages/game/game-avalon/src/index.ts)
 
 <a id="deepseek-aidsh-game-controller-agent"></a>
 
@@ -3218,6 +3218,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-client-web` ([`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts))
 - `@deepseek-ai/dsh-client-web-react` ([`packages/client/web-react/src/index.ts`](../packages/client/web-react/src/index.ts))
 - `@deepseek-ai/dsh-cmdline` ([`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts))
+- `@deepseek-ai/dsh-game-avalon-rules` ([`packages/game/game-avalon-rules/src/index.ts`](../packages/game/game-avalon-rules/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `@deepseek-ai/dsh-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
 - `@deepseek-ai/dsh-launch-environment` ([`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts))

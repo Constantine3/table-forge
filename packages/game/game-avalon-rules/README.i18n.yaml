@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write packages/client/ui-game-avalon/README.md
-README.md: 1c4dfcfe2a6378d2b2212f1cb40ee79bd73d1181
-README.zh.md: 4ebc98ab25fedaf076661f0c3872b2ff65017881
+#   pnpm run verify-translation-pairing --write packages/game/game-avalon-rules/README.md
+README.md: 0f1e410bc168f5e283c3d9da714911c674af29ab
+README.zh.md: a1e107d120851626bb6a680a488a8e69a2e2b8bd

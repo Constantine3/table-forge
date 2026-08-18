@@ -17,13 +17,15 @@ const seats = [
 ]
 const publicGame = {
   phase: 'proposal', playerCount: 5, missionSizes: [2, 3, 2, 3, 3],
+  rolePreset: 'basic',
+  roleDeck: ['merlin', 'loyal-servant', 'loyal-servant', 'assassin', 'minion'],
   missionFailThresholds: [1, 1, 1, 1, 1],
   leader: 'human', missionNumber: 1, teamSize: 2, failThreshold: 1, rejectedTeams: 0,
   score: { good: 0, evil: 0 }, proposal: null, statements: [], teamVotes: [], missions: [],
 } as const
 const game = {
   ...publicGame,
-  private: { role: 'merlin', alignment: 'good', knownPlayers: [{ seatId: 'ai-1', alignment: 'evil' }] },
+  private: { role: 'merlin', alignment: 'good', knowledge: [{ kind: 'evil', seatId: 'ai-1' }] },
 } as const
 const operations = () => ({
   createMatch: vi.fn((_request: GameRemoteCreateRequest) => Promise.resolve()),
@@ -69,12 +71,25 @@ describe('Avalon game UI contribution', () => {
     view.rerender(<AvalonSurface {...props(undefined, actions)} />)
     expect(screen.getAllByRole('combobox')).toHaveLength(7)
     expect(screen.getByLabelText('游戏人数')).toHaveProperty('value', '6')
-    expect(screen.getByText('忠臣 × 3')).toBeTruthy()
-    expect(screen.getByText('爪牙 × 1')).toBeTruthy()
+    expect(screen.getByText('梅林 × 1')).toBeTruthy()
+    expect(screen.getByText('刺客 × 1')).toBeTruthy()
+    expect(screen.getByText('派西维尔 × 1')).toBeTruthy()
+    expect(screen.getByText('亚瑟的忠臣 × 2')).toBeTruthy()
+    expect(screen.getByText('莫甘娜 × 1')).toBeTruthy()
+    const merlinRole = screen.getByText('梅林 × 1')
+    expect(merlinRole.getAttribute('tabindex')).toBe('0')
+    expect(merlinRole.getAttribute('data-tooltip')).toBe('善方 · 知道除莫德雷德外的邪方，但必须隐藏自己。')
+    expect(merlinRole.getAttribute('aria-label'))
+      .toBe('梅林 × 1。善方。知道除莫德雷德外的邪方，但必须隐藏自己。')
+    merlinRole.focus()
+    expect(document.activeElement).toBe(merlinRole)
     fireEvent.change(screen.getByLabelText('你的角色'), { target: { value: 'assassin' } })
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
     const request = actions.createMatch.mock.calls[0]![0]
-    expect(request).toMatchObject({ gameId: 'avalon', config: { playerCount: 6, humanRole: 'assassin' } })
+    expect(request).toMatchObject({
+      gameId: 'avalon',
+      config: { playerCount: 6, rolePreset: 'percival-morgana', humanRole: 'assassin' },
+    })
     expect(request.seats).toHaveLength(6)
     expect(request.seats.filter(seat => seat.controller.type === 'human')).toHaveLength(1)
     expect(request.seats.slice(1).map(seat => seat.controller)).toEqual(Array.from({ length: 5 }, () => ({
@@ -87,6 +102,9 @@ describe('Avalon game UI contribution', () => {
     render(<AvalonSurface {...props(undefined, actions)} />)
     fireEvent.click(screen.getByRole('button', { name: '全 AI 对局' }))
     expect(screen.queryByLabelText('你的角色')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '你与 AI' }))
+    expect(screen.getByLabelText('你的角色')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '全 AI 对局' }))
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(6)
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '5' } })
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(5)
@@ -94,15 +112,45 @@ describe('Avalon game UI contribution', () => {
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(6)
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '7' } })
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(7)
-    expect(screen.getByText('忠臣 × 3')).toBeTruthy()
-    expect(screen.getByText('爪牙 × 2')).toBeTruthy()
+    expect(screen.getByText('亚瑟的忠臣 × 2')).toBeTruthy()
+    expect(screen.getByText('莫德雷德的爪牙 × 1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
 
     const request = actions.createMatch.mock.calls[0]![0]
-    expect(request).toMatchObject({ gameId: 'avalon', config: { playerCount: 7 } })
+    expect(request).toMatchObject({
+      gameId: 'avalon', config: { playerCount: 7, rolePreset: 'percival-morgana' },
+    })
     expect(request.seats).toHaveLength(7)
     expect(request.seats.every(seat => seat.controller.type === 'agent')).toBe(true)
     expect(request.seats.map(seat => seat.id)).toEqual(['ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5', 'ai-6', 'ai-7'])
+  })
+
+  it('offers only fair presets and falls back when a table size does not support the selection', () => {
+    const actions = operations()
+    render(<AvalonSurface {...props(undefined, actions)} />)
+    expect(screen.queryByRole('button', { name: /莫德雷德与奥伯伦/ })).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '7' } })
+    fireEvent.change(screen.getByLabelText('你的角色'), { target: { value: 'morgana' } })
+    fireEvent.click(screen.getByRole('button', { name: /莫德雷德与奥伯伦/ }))
+    expect(screen.getByLabelText('你的角色')).toHaveProperty('value', '')
+    expect(screen.getByText('莫德雷德 × 1')).toBeTruthy()
+    expect(screen.getByText('奥伯伦 × 1')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('你的角色'), { target: { value: 'merlin' } })
+    fireEvent.click(screen.getByRole('button', { name: /基础身份/ }))
+    expect(screen.getByLabelText('你的角色')).toHaveProperty('value', 'merlin')
+    fireEvent.click(screen.getByRole('button', { name: /莫德雷德与奥伯伦/ }))
+    expect(screen.getByLabelText('你的角色')).toHaveProperty('value', 'merlin')
+    fireEvent.change(screen.getByLabelText('你的角色'), { target: { value: 'oberon' } })
+    fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
+    expect(actions.createMatch.mock.calls[0]![0].config).toEqual({
+      playerCount: 7, rolePreset: 'mordred-oberon', humanRole: 'oberon',
+    })
+
+    fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '5' } })
+    expect(screen.getByRole('button', { name: /派西维尔与莫甘娜/ }).getAttribute('data-active')).toBe('true')
+    expect(within(screen.getByLabelText('你的角色')).queryByRole('option', { name: '奥伯伦' })).toBeNull()
+    expect(screen.getByLabelText('你的角色')).toHaveProperty('value', '')
   })
 
   it('builds a proposal from the seat-scoped action schema', () => {
@@ -141,14 +189,16 @@ describe('Avalon game UI contribution', () => {
       ...props(undefined, actions), providers: [provider, alternate],
     }} />)
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '5' } })
-    expect(screen.getByText('忠臣 × 2')).toBeTruthy()
+    expect(screen.getByText('亚瑟的忠臣 × 1')).toBeTruthy()
     const selectors = screen.getAllByLabelText(/^AI 席位/)
     expect(selectors).toHaveLength(4)
     for (const [index, selector] of selectors.entries()) {
       fireEvent.change(selector, { target: { value: index % 2 === 0 ? 'alternate' : 'local' } })
     }
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
-    expect(actions.createMatch.mock.calls[0]![0].config).toEqual({ playerCount: 5 })
+    expect(actions.createMatch.mock.calls[0]![0].config).toEqual({
+      playerCount: 5, rolePreset: 'percival-morgana',
+    })
     expect(actions.createMatch.mock.calls[0]![0].seats.slice(1).map(seat => seat.controller)).toEqual([
       { type: 'agent', provider: 'alternate', model: 'other' },
       { type: 'agent', provider: 'local', model: 'model' },
@@ -172,23 +222,97 @@ describe('Avalon game UI contribution', () => {
       { id: 'ai-5', displayName: 'AI 5', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
       { id: 'ai-6', displayName: 'AI 6', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
     ]
+    const sevenPlayerGame = {
+      ...publicGame,
+      playerCount: 7,
+      roleDeck: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'minion', 'minion'],
+      missionSizes: [2, 3, 3, 4, 4],
+      missionFailThresholds: [1, 1, 1, 2, 1],
+    } as const
     const match: GameRemoteMatchView = {
       id: 'seven', gameId: 'avalon', revision: 1, status: 'active', seats: sevenPlayerSeats,
       window: { id: 'wait', requiredSeats: [], submittedSeats: [], canAct: false },
       blockedSeats: [],
-      game: {
-        ...publicGame,
-        playerCount: 7,
-        missionSizes: [2, 3, 3, 4, 4],
-        missionFailThresholds: [1, 1, 1, 2, 1],
-      },
+      game: sevenPlayerGame,
     }
     const view = render(<AvalonSurface {...(props(match) as Parameters<typeof AvalonSurface>[0])} />)
     const roundTable = view.container.querySelector('[data-layout="circle"]')!
     expect(roundTable.querySelectorAll('[data-position]')).toHaveLength(7)
+    const roleComposition = screen.getByLabelText('角色构成')
+    expect(within(roleComposition).getByText('梅林 × 1')).toBeTruthy()
+    expect(within(roleComposition).getByText('亚瑟的忠臣 × 3')).toBeTruthy()
+    expect(within(roleComposition).getByText('刺客 × 1')).toBeTruthy()
+    expect(within(roleComposition).getByText('莫德雷德的爪牙 × 2')).toBeTruthy()
     expect(screen.getAllByText('4 人')).toHaveLength(2)
     expect(screen.getByText('需 2 票失败')).toBeTruthy()
     expect(screen.getByRole('button', { name: /圆桌成员AI 6/ }).getAttribute('style')).toMatch(/left:|top:/)
+
+    view.rerender(<AvalonSurface {...props({
+      ...match,
+      game: {
+        ...sevenPlayerGame,
+        missions: [
+          { number: 1, team: ['human', 'ai-1'], failCount: 0, success: true },
+          { number: 2, team: ['human', 'ai-1', 'ai-2'], failCount: 0, success: true },
+          { number: 3, team: ['human', 'ai-1', 'ai-2'], failCount: 1, success: false },
+          { number: 4, team: ['human', 'ai-1', 'ai-2', 'ai-3'], failCount: 2, success: false },
+        ],
+      },
+    })} />)
+    expect(screen.getByText('失败 · 2 票 · 门槛 2 票')).toBeTruthy()
+  })
+
+  it('explains special-role abilities without resolving Percival candidates', () => {
+    const match: GameRemoteMatchView = {
+      id: 'knowledge', gameId: 'avalon', revision: 1, status: 'active', seats,
+      window: { id: 'wait', requiredSeats: [], submittedSeats: [], canAct: false },
+      blockedSeats: [],
+      game: {
+        ...publicGame,
+        rolePreset: 'percival-morgana',
+        roleDeck: ['merlin', 'percival', 'loyal-servant', 'assassin', 'morgana'],
+        private: {
+          role: 'percival', alignment: 'good',
+          knowledge: [
+            { kind: 'merlin-candidate', seatId: 'ai-1' },
+            { kind: 'merlin-candidate', seatId: 'ai-2' },
+          ],
+        },
+      },
+    }
+    const view = render(<AvalonSurface {...(props(match) as Parameters<typeof AvalonSurface>[0])} />)
+    expect(screen.getByText('看到梅林与莫甘娜两名候选，但无法分辨。')).toBeTruthy()
+    expect(screen.getByText('梅林候选（无法分辨）：AI 1、AI 2')).toBeTruthy()
+    expect(screen.queryByText(/AI 1（梅林）/)).toBeNull()
+
+    view.rerender(<AvalonSurface {...props({
+      ...match,
+      game: {
+        ...publicGame,
+        playerCount: 7,
+        rolePreset: 'mordred-oberon',
+        roleDeck: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'mordred', 'oberon'],
+        private: { role: 'oberon', alignment: 'evil', knowledge: [] },
+      },
+    })} />)
+    expect(screen.getByText('属于邪方但不参与邪方互认与刺杀密谈，需独立判断。')).toBeTruthy()
+    expect(screen.queryByText(/邪方同伴：/)).toBeNull()
+  })
+
+  it('rejects a projected board without all five mission failure thresholds', () => {
+    const match: GameRemoteMatchView = {
+      id: 'invalid', gameId: 'avalon', revision: 1, status: 'active', seats,
+      window: { id: 'wait', requiredSeats: [], submittedSeats: [], canAct: false },
+      blockedSeats: [],
+      game: { ...publicGame, missionFailThresholds: [1, 1, 1, 1] },
+    }
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      expect(() => render(<AvalonSurface {...(props(match) as Parameters<typeof AvalonSurface>[0])} />))
+        .toThrow('Avalon mission 5 has no failure threshold')
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('renders mission, identity, proposal, and anonymous vote patterns', () => {
@@ -208,11 +332,10 @@ describe('Avalon game UI contribution', () => {
       ],
       private: {
         role: 'assassin', alignment: 'evil',
-        knownPlayers: [
-          { seatId: 'ai-1', role: 'minion' },
-          { seatId: 'ai-2', role: 'loyal-servant' },
-          { seatId: 'missing', role: 'merlin' },
-          { seatId: 'ai-3' },
+        knowledge: [
+          { kind: 'evil-ally', seatId: 'ai-1', role: 'minion' },
+          { kind: 'evil-ally', seatId: 'ai-2', role: 'morgana' },
+          { kind: 'evil-ally', seatId: 'missing', role: 'assassin' },
         ],
       },
       roles: { human: 'merlin', 'ai-1': 'assassin', 'ai-2': 'minion', 'ai-3': 'loyal-servant', 'ai-4': 'unknown' },
@@ -240,10 +363,9 @@ describe('Avalon game UI contribution', () => {
     render(<AvalonSurface {...(props(match, actions) as Parameters<typeof AvalonSurface>[0])} />)
     expect(screen.getAllByText('刺客')).toHaveLength(2)
     expect(screen.getAllByText('邪方').length).toBeGreaterThan(0)
-    expect(screen.getByText(/你知道：/).textContent).toContain('missing（梅林）')
+    expect(screen.getByText(/邪方同伴：/).textContent).toContain('missing（刺客）')
     expect(screen.getAllByText('莫德雷德的爪牙').length).toBeGreaterThan(0)
     expect(screen.getAllByText('亚瑟的忠臣').length).toBeGreaterThan(0)
-    expect(screen.getByText('未知角色')).toBeTruthy()
     expect(screen.getByText('投票前发言')).toBeTruthy()
     expect(screen.getAllByText(/顺时针/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/逆时针/).length).toBeGreaterThan(0)
@@ -369,7 +491,7 @@ describe('Avalon game UI contribution', () => {
         evilSpeaker: 'human', evilDiscussion: [],
         private: {
           role: 'minion', alignment: 'evil',
-          knownPlayers: [{ seatId: 'ai-1', role: 'assassin' }],
+          knowledge: [{ kind: 'evil-ally', seatId: 'ai-1', role: 'assassin' }],
         },
       },
     }
@@ -392,7 +514,7 @@ describe('Avalon game UI contribution', () => {
         evilDiscussion: [{ seatId: 'ai-1', statement: '我怀疑 AI 2。' }],
         private: {
           role: 'assassin', alignment: 'evil',
-          knownPlayers: [{ seatId: 'ai-1', role: 'minion' }],
+          knowledge: [{ kind: 'evil-ally', seatId: 'ai-1', role: 'minion' }],
         },
       },
     }, actions)} />)
@@ -423,7 +545,7 @@ describe('Avalon game UI contribution', () => {
         evilSpeaker: 'ai-1',
         private: {
           role: 'minion', alignment: 'evil',
-          knownPlayers: [{ seatId: 'ai-1', role: 'assassin' }],
+          knowledge: [{ kind: 'evil-ally', seatId: 'ai-1', role: 'assassin' }],
         },
       },
     })} />)
@@ -439,7 +561,7 @@ describe('Avalon game UI contribution', () => {
         evilDiscussion: [{ seatId: 'missing', statement: '私密判断。' }],
         private: {
           role: 'minion', alignment: 'evil',
-          knownPlayers: [{ seatId: 'ai-1', role: 'assassin' }],
+          knowledge: [{ kind: 'evil-ally', seatId: 'ai-1', role: 'assassin' }],
         },
       },
     })} />)
@@ -453,7 +575,7 @@ describe('Avalon game UI contribution', () => {
         evilSpeaker: 'human', evilDiscussion: [],
         private: {
           role: 'assassin', alignment: 'evil',
-          knownPlayers: [{ seatId: 'ai-1', role: 'minion' }],
+          knowledge: [{ kind: 'evil-ally', seatId: 'ai-1', role: 'minion' }],
         },
       },
     })} />)
@@ -517,8 +639,9 @@ describe('Avalon game UI contribution', () => {
     }
     render(<AvalonSurface {...(props(match) as Parameters<typeof AvalonSurface>[0])} />)
     expect(screen.getByText('最终抉择正在私下进行。')).toBeTruthy()
+    expect(screen.getByText('刺客 × 1')).toBeTruthy()
     expect(screen.queryByText('刺杀梅林')).toBeNull()
-    expect(screen.queryByText(/刺客/)).toBeNull()
+    expect(screen.queryByText('你的身份')).toBeNull()
   })
 
   it('offers identity-free retry when a private controller is blocked', () => {

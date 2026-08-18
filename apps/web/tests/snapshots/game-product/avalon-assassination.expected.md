@@ -5,11 +5,14 @@
   - paragraph: 第 4 次任务
   - heading "阿瓦隆" [level=1]
   - button "结束对局"
+  - strong: 基础身份
+  - text: 梅林 × 1 亚瑟的忠臣 × 3 刺客 × 1 莫德雷德的爪牙 × 1
   - complementary:
     - text: 你的身份
     - strong: 刺客
     - text: 邪方
-    - paragraph: 你知道：AI 1（莫德雷德的爪牙）
+    - paragraph: 属于邪方协作阵营；善方三次成功后负责刺杀梅林。
+    - paragraph: 邪方同伴：AI 1（莫德雷德的爪牙）
   - text: "1"
   - strong: 2 人
   - text: 成功 2

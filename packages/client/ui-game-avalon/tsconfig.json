@@ -9,6 +9,7 @@
     { "path": "../runtime" },
     { "path": "../ui-slots" },
     { "path": "../ui-game" },
-    { "path": "../../game/game" }
+    { "path": "../../game/game" },
+    { "path": "../../game/game-avalon-rules" }
   ]
 }

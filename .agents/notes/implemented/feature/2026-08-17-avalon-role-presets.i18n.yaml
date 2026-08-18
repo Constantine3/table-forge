@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-17-avalon-role-presets.md
+2026-08-17-avalon-role-presets.md: c876b81c727979c99f2a79237ae37f142f23860d
+2026-08-17-avalon-role-presets.zh.md: 38082d3ec1d66b9751dd00573c9ec425b0a5d490

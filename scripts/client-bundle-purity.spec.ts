@@ -77,6 +77,12 @@ describe('client bundle purity gate', () => {
     expect(resolveId('@deepseek-ai/dsh-brand')).toBeNull()
   })
 
+  it('lets the exact browser-safe Avalon rules package inline', () => {
+    expect(resolveId('@deepseek-ai/dsh-game-avalon-rules')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-game-avalon')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-game-avalon-rules/internal')).toThrow(/purity/)
+  })
+
   it('lets exact generated Remote contributions inline without admitting their package implementation', () => {
     expect(resolveId('@deepseek-ai/dsh-goal/remote')).toBeNull()
     expect(() => resolveId('@deepseek-ai/dsh-goal')).toThrow(/purity/)

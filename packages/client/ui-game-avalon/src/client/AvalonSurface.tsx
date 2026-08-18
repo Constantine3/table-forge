@@ -4,15 +4,32 @@ import type {
   GameCatalogItemOwnerProps, GameProviderOption, GameSurfaceOwnerProps,
 } from '@deepseek-ai/dsh-client-ui-game/client'
 import type { GameWireJson } from '@deepseek-ai/dsh-game/types'
+import {
+  AVALON_ROLES,
+  DEFAULT_AVALON_ROLE_PRESET,
+  avalonRoleAlignment,
+  avalonRoleDescription,
+  avalonRoleLabel,
+  avalonRolePresetInfo,
+  avalonRolePresetsForPlayerCount,
+  isAvalonRole,
+  resolveAvalonRules,
+  type AvalonPlayerCount,
+  type AvalonRole,
+  type AvalonRolePreset,
+} from '@deepseek-ai/dsh-game-avalon-rules'
 import css from './AvalonSurface.module.css'
 
 type CatalogProps = PropsRuntime<'game.catalog.item'> & GameCatalogItemOwnerProps
 type SurfaceProps = GameSurfaceOwnerProps
 
 type AvalonSpeechDirection = 'clockwise' | 'counterclockwise'
-type AvalonRole = 'merlin' | 'loyal-servant' | 'assassin' | 'minion'
-type AvalonPlayerCount = 5 | 6 | 7
 type AvalonMode = 'human-ai' | 'ai-only'
+
+type AvalonKnowledge =
+  | { kind: 'evil'; seatId: string }
+  | { kind: 'merlin-candidate'; seatId: string }
+  | { kind: 'evil-ally'; seatId: string; role: AvalonRole }
 
 interface AvalonProposal { leader: string; team: string[]; direction: AvalonSpeechDirection }
 interface AvalonStatement { seatId: string; statement: string }
@@ -27,6 +44,8 @@ interface AvalonMission { number: number; team: string[]; failCount: number; suc
 interface AvalonView {
   phase: 'proposal' | 'discussion' | 'team-vote' | 'quest' | 'evil-discussion' | 'assassination' | 'finished'
   playerCount: AvalonPlayerCount
+  rolePreset: AvalonRolePreset
+  roleDeck: AvalonRole[]
   missionSizes: [number, number, number, number, number]
   missionFailThresholds: [number, number, number, number, number]
   leader: string
@@ -41,7 +60,7 @@ interface AvalonView {
   evilSpeaker?: string
   teamVotes: AvalonVoteRecord[]
   missions: AvalonMission[]
-  private?: { role: string; alignment: 'good' | 'evil'; knownPlayers: Array<{ seatId: string; alignment?: string; role?: string }> }
+  private?: { role: AvalonRole; alignment: 'good' | 'evil'; knowledge: AvalonKnowledge[] }
   winner?: 'good' | 'evil'
   finishReason?: string
   roles?: Record<string, string>
@@ -58,11 +77,41 @@ interface ActionSchema {
 }
 
 const roleLabel = (role: string | undefined): string => {
-  if (role === 'merlin') return '梅林'
-  if (role === 'assassin') return '刺客'
-  if (role === 'minion') return '莫德雷德的爪牙'
-  if (role === 'loyal-servant') return '亚瑟的忠臣'
-  return '未知角色'
+  return role !== undefined && isAvalonRole(role) ? avalonRoleLabel(role) : '未知角色'
+}
+
+function RoleComposition({ roleDeck, compact = false }: { roleDeck: readonly AvalonRole[]; compact?: boolean }) {
+  return <div className={css.roles} data-compact={compact} aria-label="角色构成">
+    {AVALON_ROLES.map(role => ({ role, count: roleDeck.filter(candidate => candidate === role).length }))
+      .filter(({ count }) => count > 0)
+      .map(({ role, count }) => {
+        const label = avalonRoleLabel(role)
+        const alignment = avalonRoleAlignment(role) === 'good' ? '善方' : '邪方'
+        const description = avalonRoleDescription(role)
+        return <span
+          className={css.roleInfo}
+          key={role}
+          tabIndex={0}
+          aria-label={`${label} × ${count}。${alignment}。${description}`}
+          data-tooltip={`${alignment} · ${description}`}
+        >{label} × {count}</span>
+      })}
+  </div>
+}
+
+function PrivateKnowledge({ knowledge, seats }: {
+  knowledge: readonly AvalonKnowledge[]
+  seats: readonly { id: string; displayName: string }[]
+}) {
+  const name = (seatId: string): string => seats.find(seat => seat.id === seatId)?.displayName ?? seatId
+  const candidates = knowledge.filter(item => item.kind === 'merlin-candidate')
+  const visibleEvil = knowledge.filter(item => item.kind === 'evil')
+  const allies = knowledge.filter(item => item.kind === 'evil-ally')
+  return <>
+    {candidates.length > 0 && <p>梅林候选（无法分辨）：{candidates.map(item => name(item.seatId)).join('、')}</p>}
+    {visibleEvil.length > 0 && <p>你看到的邪方：{visibleEvil.map(item => name(item.seatId)).join('、')}</p>}
+    {allies.length > 0 && <p>邪方同伴：{allies.map(item => `${name(item.seatId)}（${avalonRoleLabel(item.role)}）`).join('、')}</p>}
+  </>
 }
 
 const finishLabel = (reason: string | undefined): string => {
@@ -112,16 +161,16 @@ export function AvalonSurface({
 }: SurfaceProps) {
   const [mode, setMode] = useState<AvalonMode>('human-ai')
   const [playerCount, setPlayerCount] = useState<AvalonPlayerCount>(6)
+  const [rolePreset, setRolePreset] = useState<AvalonRolePreset>(DEFAULT_AVALON_ROLE_PRESET)
   const [providerIds, setProviderIds] = useState<string[]>(['', '', '', '', '', '', ''])
   const [humanRole, setHumanRole] = useState<AvalonRole | ''>('')
   const [team, setTeam] = useState<string[]>([])
   const [finalTeam, setFinalTeam] = useState<string[] | undefined>()
   const [direction, setDirection] = useState<AvalonSpeechDirection | ''>('')
   const [statement, setStatement] = useState('')
+  const setupRules = resolveAvalonRules(playerCount, rolePreset)
+  const availablePresets = avalonRolePresetsForPlayerCount(playerCount)
   const aiSeatCount = playerCount - (mode === 'human-ai' ? 1 : 0)
-  const evilCount = playerCount === 7 ? 3 : 2
-  const loyalServantCount = playerCount - evilCount - 1
-  const minionCount = evilCount - 1
   const selectedProviders = providerIds.slice(0, aiSeatCount).map(id => providerAt(providers, id))
   const create = (): void => {
     /* v8 ignore next -- the setup button is disabled while any AI provider is unavailable. */
@@ -136,7 +185,7 @@ export function AvalonSurface({
     }))
     void createMatch({
       gameId: 'avalon',
-      config: { playerCount, ...(mode === 'human-ai' && humanRole !== '' ? { humanRole } : {}) },
+      config: { playerCount, rolePreset, ...(mode === 'human-ai' && humanRole !== '' ? { humanRole } : {}) },
       seats: mode === 'human-ai'
         ? [{ id: 'human', displayName: '你', controller: { type: 'human' } }, ...aiSeats]
         : aiSeats,
@@ -153,33 +202,51 @@ export function AvalonSurface({
   }
 
   if (match === undefined) return <section className={css.setup}>
-    <p className={css.eyebrow}>五至七人基础局</p><h1>阿瓦隆</h1>
-    <p className={css.lead}>选择参与方式和圆桌人数，并为每名 AI 分别选择模型提供方。</p>
+    <p className={css.eyebrow}>五至七人 · 预设角色组合</p><h1>阿瓦隆</h1>
+    <p className={css.lead}>选择参与方式、圆桌人数和平衡角色组合，并为每名 AI 分别选择模型提供方。</p>
     <div className={css.segmented}>
       <button data-active={mode === 'human-ai'} onClick={() => { setMode('human-ai') }}>你与 AI</button>
       <button data-active={mode === 'ai-only'} onClick={() => { setMode('ai-only') }}>全 AI 对局</button>
     </div>
     <label>游戏人数
       <select aria-label="游戏人数" value={playerCount} onChange={(event) => {
-        setPlayerCount(Number(event.target.value) as AvalonPlayerCount)
+        const nextPlayerCount = Number(event.target.value) as AvalonPlayerCount
+        const nextPresets = avalonRolePresetsForPlayerCount(nextPlayerCount)
+        const nextRolePreset = nextPresets.some(preset => preset.id === rolePreset)
+          ? rolePreset
+          : DEFAULT_AVALON_ROLE_PRESET
+        const nextDeck = resolveAvalonRules(nextPlayerCount, nextRolePreset).roleDeck
+        setPlayerCount(nextPlayerCount)
+        setRolePreset(nextRolePreset)
+        setHumanRole(current => current !== '' && !nextDeck.includes(current) ? '' : current)
       }}>
         <option value={5}>五人局</option>
         <option value={6}>六人局</option>
         <option value={7}>七人局</option>
       </select>
     </label>
-    <div className={css.roles}>
-      <span>梅林</span><span>刺客</span><span>忠臣 × {loyalServantCount}</span><span>爪牙 × {minionCount}</span>
-    </div>
+    <fieldset className={css.presets}>
+      <legend>角色组合</legend>
+      {availablePresets.map(preset => <button
+        type="button"
+        key={preset.id}
+        data-active={rolePreset === preset.id}
+        onClick={() => {
+          const nextDeck = resolveAvalonRules(playerCount, preset.id).roleDeck
+          setRolePreset(preset.id)
+          setHumanRole(current => current !== '' && !nextDeck.includes(current) ? '' : current)
+        }}
+      ><strong>{preset.label}</strong><small>{preset.description}</small></button>)}
+    </fieldset>
+    <RoleComposition roleDeck={setupRules.roleDeck} />
     {mode === 'human-ai' && <label>你的角色
       <select aria-label="你的角色" value={humanRole} onChange={(event) => {
         setHumanRole(event.target.value as AvalonRole | '')
       }}>
         <option value="">随机分配</option>
-        <option value="merlin">梅林</option>
-        <option value="loyal-servant">亚瑟的忠臣</option>
-        <option value="assassin">刺客</option>
-        <option value="minion">莫德雷德的爪牙</option>
+        {AVALON_ROLES.filter(role => setupRules.roleDeck.includes(role)).map(role => (
+          <option key={role} value={role}>{avalonRoleLabel(role)}</option>
+        ))}
       </select>
     </label>}
     <div className={css.providerGrid}>{providerIds.slice(0, aiSeatCount).map((selected, index) => <label key={index}>
@@ -219,7 +286,7 @@ export function AvalonSurface({
   const leaderIsCurrentSpeaker = game.phase === 'discussion' && currentSpeakerId === game.leader
   const assassinSeatId = game.private?.role === 'assassin'
     ? humanSeatId
-    : game.private?.knownPlayers.find(player => player.role === 'assassin')?.seatId
+    : game.private?.knowledge.find(item => item.kind === 'evil-ally' && item.role === 'assassin')?.seatId
   const assassinIsCurrentSpeaker = game.phase === 'evil-discussion'
     && currentSpeakerId === assassinSeatId
   const selectedTeam = leaderIsCurrentSpeaker ? finalTeam ?? (game.proposal as AvalonProposal).team : team
@@ -241,13 +308,15 @@ export function AvalonSurface({
       <div><p className={css.eyebrow}>第 {game.missionNumber} 次任务</p><h1>阿瓦隆</h1></div>
       <button type="button" className={css.quiet} disabled={busy} onClick={() => { void resetMatch() }}>结束对局</button>
     </div>
+    <div className={css.roleSummary}>
+      <strong>{avalonRolePresetInfo(game.rolePreset).label}</strong>
+      <RoleComposition roleDeck={game.roleDeck} compact />
+    </div>
     {game.private !== undefined && <aside className={css.identity}>
       <span>你的身份</span><strong>{roleLabel(game.private.role)}</strong>
       <small>{game.private.alignment === 'good' ? '善方' : '邪方'}</small>
-      {game.private.knownPlayers.length > 0 && <p>你知道：{game.private.knownPlayers.map((known) => {
-        const name = match.seats.find(seat => seat.id === known.seatId)?.displayName ?? known.seatId
-        return `${name}${known.role === undefined ? '' : `（${roleLabel(known.role)}）`}`
-      }).join('、')}</p>}
+      <p>{avalonRoleDescription(game.private.role)}</p>
+      <PrivateKnowledge knowledge={game.private.knowledge} seats={match.seats} />
     </aside>}
     <div className={css.tableLayout}>
       <div className={css.missions} aria-label="任务进度">{game.missionSizes.map((missionSize, index) => {

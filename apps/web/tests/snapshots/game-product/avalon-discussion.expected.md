@@ -5,11 +5,14 @@
   - paragraph: 第 1 次任务
   - heading "阿瓦隆" [level=1]
   - button "结束对局"
+  - strong: 基础身份
+  - text: 梅林 × 1 亚瑟的忠臣 × 2 刺客 × 1 莫德雷德的爪牙 × 1
   - complementary:
     - text: 你的身份
     - strong: 梅林
     - text: 善方
-    - paragraph: 你知道：AI 1、AI 2
+    - paragraph: 知道除莫德雷德外的邪方，但必须隐藏自己。
+    - paragraph: 你看到的邪方：AI 1、AI 2
   - text: "1"
   - strong: 2 人
   - text: "2"

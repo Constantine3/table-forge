@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-game-engine",
   "description": "Event-sourced match engine for DeepSeek Harness games",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": { "access": "public" },
   "repository": { "type": "git", "url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/game/game-engine" },
   "type": "module",

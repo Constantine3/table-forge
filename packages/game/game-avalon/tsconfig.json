@@ -7,6 +7,7 @@
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../runtime-diagnostics/invariants" },
-    { "path": "../game" }
+    { "path": "../game" },
+    { "path": "../game-avalon-rules" }
   ]
 }

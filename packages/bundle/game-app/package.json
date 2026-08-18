@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-game-app",
   "description": "Table Forge game product bundle over the browser runtime",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": { "access": "public" },
   "repository": { "type": "git", "url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/bundle/game-app" },
   "type": "module",
@@ -24,6 +24,7 @@
     "@deepseek-ai/dsh-game-controller-agent": "workspace:^",
     "@deepseek-ai/dsh-game-engine": "workspace:^",
     "@deepseek-ai/dsh-game-avalon": "workspace:^",
+    "@deepseek-ai/dsh-game-avalon-rules": "workspace:^",
     "@deepseek-ai/dsh-game-persistence-sqlite": "workspace:^",
     "@deepseek-ai/dsh-game-rps": "workspace:^",
     "@deepseek-ai/dsh-host-directory-picker-browse": "workspace:^"

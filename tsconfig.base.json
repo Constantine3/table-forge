@@ -43,6 +43,7 @@
       "@deepseek-ai/dsh-client-ui-game/client": ["./packages/client/ui-game/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-game-rps": ["./packages/client/ui-game-rps/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-game-avalon": ["./packages/client/ui-game-avalon/src/index.ts"],
+      "@deepseek-ai/dsh-game-avalon-rules": ["./packages/game/game-avalon-rules/src/index.ts"],
       "@deepseek-ai/dsh-tool-call-timeout-policy": ["./packages/guard/timeout-policy/src"],
       "@deepseek-ai/dsh-tool-call-timeout-policy/invariant": ["./packages/guard/timeout-policy/src/invariant.ts"],
       "@deepseek-ai/dsh-typert-registry": ["./packages/typert/registry/src/index.ts"],

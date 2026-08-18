@@ -4,22 +4,42 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   GameActionSpec, GameDefinition, GameJson, GameRuleEvent, MatchSeatSpec, SeatId,
 } from '@deepseek-ai/dsh-game'
+import {
+  AVALON_ROLES,
+  DEFAULT_AVALON_ROLE_PRESET,
+  avalonRoleAlignment,
+  avalonRoleLabel,
+  avalonRolePresetInfo,
+  isAvalonEvilRole,
+  isAvalonRole,
+  isAvalonRolePreset,
+  participatesInAvalonEvilNetwork,
+  resolveAvalonRules,
+  type AvalonPlayerCount,
+  type AvalonRole,
+  type AvalonRolePreset,
+  type AvalonRules,
+} from '@deepseek-ai/dsh-game-avalon-rules'
 import z from '@deepseek-ai/schemastery'
 import { createHash } from 'node:crypto'
 
-/** Roles used by the supported Avalon rulesets. */
-export type AvalonRole = 'merlin' | 'loyal-servant' | 'assassin' | 'minion'
-
-/** Supported Avalon table sizes. */
-export type AvalonPlayerCount = 5 | 6 | 7
+export type { AvalonPlayerCount, AvalonRole, AvalonRolePreset } from '@deepseek-ai/dsh-game-avalon-rules'
 
 /** Per-match choices accepted by the Avalon rulesets. */
 export interface AvalonMatchConfig {
   /** Number of seats at the table. */
   readonly playerCount: AvalonPlayerCount
+  /** Validated role combination used by this table. */
+  readonly rolePreset: AvalonRolePreset
   /** Role pinned to the single human seat; omission keeps deterministic private random assignment. */
   readonly humanRole?: AvalonRole
 }
+
+/** One piece of role-specific private identity knowledge. */
+export type AvalonKnowledge =
+  | { readonly kind: 'evil'; readonly seatId: SeatId }
+  | { readonly kind: 'merlin-candidate'; readonly seatId: SeatId }
+  | { readonly kind: 'evil-ally'; readonly seatId: SeatId; readonly role: AvalonRole }
 
 /** Direction selected by the leader for one public discussion round. */
 export type AvalonSpeechDirection = 'clockwise' | 'counterclockwise'
@@ -66,6 +86,7 @@ interface MissionRecord {
 interface AvalonState {
   readonly seats: readonly SeatId[]
   readonly roles: Readonly<Record<string, AvalonRole>>
+  readonly rolePreset: AvalonRolePreset
   readonly phase: 'proposal' | 'discussion' | 'team-vote' | 'quest' | 'evil-discussion' | 'assassination' | 'finished'
   readonly leaderIndex: number
   readonly missionIndex: number
@@ -79,34 +100,6 @@ interface AvalonState {
   readonly finishReason?: 'three-failed-quests' | 'five-rejected-teams' | 'merlin-assassinated' | 'merlin-survived'
   readonly assassinationTarget?: SeatId
 }
-
-interface AvalonRules {
-  readonly roleDeck: readonly AvalonRole[]
-  readonly missionSizes: readonly [number, number, number, number, number]
-  readonly missionFailThresholds: readonly [number, number, number, number, number]
-}
-
-const AVALON_RULES: Readonly<Record<AvalonPlayerCount, AvalonRules>> = {
-  5: {
-    roleDeck: ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'minion'],
-    missionSizes: [2, 3, 2, 3, 3],
-    missionFailThresholds: [1, 1, 1, 1, 1],
-  },
-  6: {
-    roleDeck: ['merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'minion'],
-    missionSizes: [2, 3, 4, 3, 4],
-    missionFailThresholds: [1, 1, 1, 1, 1],
-  },
-  7: {
-    roleDeck: [
-      'merlin', 'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'minion', 'minion',
-    ],
-    missionSizes: [2, 3, 3, 4, 4],
-    missionFailThresholds: [1, 1, 1, 2, 1],
-  },
-}
-const AVALON_ROLES = new Set<string>(['merlin', 'loyal-servant', 'assassin', 'minion'])
-const EVIL_ROLES = new Set<AvalonRole>(['assassin', 'minion'])
 
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 
@@ -126,7 +119,16 @@ const playerCountFor = (seats: readonly unknown[]): AvalonPlayerCount => {
   return seats.length
 }
 
-const rulesFor = (state: AvalonState): AvalonRules => AVALON_RULES[playerCountFor(state.seats)]
+const rulesFor = (state: AvalonState): AvalonRules => {
+  const rules = resolveAvalonRules(playerCountFor(state.seats), state.rolePreset)
+  const assigned = state.seats.map(seat => roleFor(state, seat)).sort()
+  const expected = [...rules.roleDeck].sort()
+  if (Object.keys(state.roles).length !== state.seats.length
+    || assigned.some((role, index) => role !== expected[index])) {
+    throw new Error('Avalon role assignments do not match the selected role preset')
+  }
+  return rules
+}
 
 const missionTeamSize = (state: AvalonState): number => required(
   rulesFor(state).missionSizes[state.missionIndex],
@@ -191,7 +193,7 @@ const evilDiscussionSeats = (state: AvalonState): readonly SeatId[] => {
   const assassin = assassinFor(state)
   const assassinIndex = state.seats.indexOf(assassin)
   const clockwise = [...state.seats.slice(assassinIndex + 1), ...state.seats.slice(0, assassinIndex)]
-  return [...clockwise.filter(seat => EVIL_ROLES.has(roleFor(state, seat))), assassin]
+  return [...clockwise.filter(seat => participatesInAvalonEvilNetwork(roleFor(state, seat))), assassin]
 }
 
 const evilDiscussionSeat = (state: AvalonState): SeatId => required(
@@ -329,7 +331,7 @@ const actionFor = (state: AvalonState, seat: MatchSeatSpec, maxStatementChars: n
     }
   }
   if (state.phase === 'quest') {
-    const outcomes = EVIL_ROLES.has(roleFor(state, seat.id)) ? ['success', 'fail'] : ['success']
+    const outcomes = isAvalonEvilRole(roleFor(state, seat.id)) ? ['success', 'fail'] : ['success']
     return {
       schema: {
         type: 'object', additionalProperties: false, required: ['type', 'outcome'],
@@ -368,13 +370,22 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
   const successes = state.missions.filter(mission => mission.success).length
   const failures = state.missions.length - successes
   const ownRole = seat === undefined ? undefined : state.roles[seat]
-  const knownPlayers = ownRole === 'merlin'
-    ? state.seats.filter(candidate => EVIL_ROLES.has(roleFor(state, candidate)))
-      .map(seatId => ({ seatId, alignment: 'evil' as const }))
-    : ownRole !== undefined && EVIL_ROLES.has(ownRole)
-      ? state.seats.filter(candidate => candidate !== seat && EVIL_ROLES.has(roleFor(state, candidate)))
-        .map(seatId => ({ seatId, role: roleFor(state, seatId) }))
-      : []
+  const knowledge: readonly AvalonKnowledge[] = ownRole === 'merlin'
+    ? state.seats
+      .filter((candidate) => {
+        const role = roleFor(state, candidate)
+        return isAvalonEvilRole(role) && role !== 'mordred'
+      })
+      .map(seatId => ({ kind: 'evil' as const, seatId }))
+    : ownRole === 'percival'
+      ? state.seats
+        .filter(candidate => roleFor(state, candidate) === 'merlin' || roleFor(state, candidate) === 'morgana')
+        .map(seatId => ({ kind: 'merlin-candidate' as const, seatId }))
+      : ownRole !== undefined && participatesInAvalonEvilNetwork(ownRole)
+        ? state.seats
+          .filter(candidate => candidate !== seat && participatesInAvalonEvilNetwork(roleFor(state, candidate)))
+          .map(seatId => ({ kind: 'evil-ally' as const, seatId, role: roleFor(state, seatId) }))
+        : []
   const missionSize = required(
     rules.missionSizes[Math.min(state.missionIndex, rules.missionSizes.length - 1)],
     `mission ${state.missionIndex + 1}`,
@@ -384,10 +395,12 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
     `mission ${state.missionIndex + 1} fail threshold`,
   )
   const evilDiscussionVisible = state.phase === 'finished'
-    || (ownRole !== undefined && EVIL_ROLES.has(ownRole))
+    || (ownRole !== undefined && participatesInAvalonEvilNetwork(ownRole))
   return {
     phase: state.phase,
     playerCount: state.seats.length,
+    rolePreset: state.rolePreset,
+    roleDeck: rules.roleDeck,
     missionSizes: rules.missionSizes,
     missionFailThresholds: rules.missionFailThresholds,
     leader: required(state.seats[state.leaderIndex], 'the current leader'),
@@ -407,7 +420,7 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
     teamVotes: state.teamVotes as unknown as GameJson,
     missions: state.missions as unknown as GameJson,
     ...(ownRole === undefined ? {} : {
-      private: { role: ownRole, alignment: EVIL_ROLES.has(ownRole) ? 'evil' : 'good', knownPlayers },
+      private: { role: ownRole, alignment: avalonRoleAlignment(ownRole), knowledge },
     }),
     ...(state.phase !== 'finished' ? {} : {
       winner: required(state.winner, 'the winner'),
@@ -421,15 +434,44 @@ const project = (state: AvalonState, seat?: SeatId): GameJson => {
 const factionStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
   const role = roleFor(state, seat)
   if (role === 'merlin') {
-    return '你的善方目标是完成三次任务并让梅林躲过刺杀。利用已知邪方身份引导安全队伍，但不得只为隐藏梅林而故意放过你明知危险的队伍；公开表达必须能由公开信息合理支撑。'
+    const mordredWarning = rulesFor(state).roleDeck.includes('mordred')
+      ? '本局存在莫德雷德，他不会出现在你的邪方视野中；未被你看见不能证明属于善方。'
+      : ''
+    return `你的善方目标是完成三次任务并让梅林躲过刺杀。利用已知邪方身份引导安全队伍，但不得只为隐藏梅林而故意放过你明知危险的队伍；公开表达必须能由公开信息合理支撑。${mordredWarning}`
+  }
+  if (role === 'percival') {
+    return '你的善方目标是完成三次任务并帮助真正的梅林隐藏身份。你看到的两名梅林候选中，一名是梅林、一名是莫甘娜，但不能直接分辨；比较两人的长期判断，同时不要公开候选范围。'
   }
   if (role === 'loyal-servant') {
     return '你的善方目标是完成三次任务并帮助梅林隐藏身份。你没有额外身份知识，应根据组队、发言、匿名票型和任务结果持续比较多种身份假设。'
   }
-  return '你的邪方目标是取得三次任务失败、促成连续五次队伍否决，或在善方三次任务成功后刺中梅林。隐藏身份和让任务成功只能是达成胜利的手段，不能替代胜利目标。'
+  const common = '你的邪方目标是取得三次任务失败、促成连续五次队伍否决，或在善方三次任务成功后刺中梅林。隐藏身份和让任务成功只能是达成胜利的手段，不能替代胜利目标。'
+  if (role === 'assassin') {
+    return `${common}你负责最终刺杀，应持续记录谁的判断像掌握了隐藏身份，同时避免为了过早追问梅林而暴露邪方。`
+  }
+  if (role === 'morgana') {
+    return `${common}你会作为假梅林出现在派西维尔视野中；用公开信息能够解释的准确判断模仿隐藏知识，误导派西维尔保护你，但不要机械地替所有邪方辩护。`
+  }
+  if (role === 'mordred') {
+    return `${common}梅林看不到你；利用这一信息盲区建立可信度并进入关键队伍，但不要因自认为安全而忽略任务胜负。`
+  }
+  if (role === 'oberon') {
+    return `${common}你是奥伯伦，不认识其他邪方，其他邪方也不知道你；只能从公开时间线独立推断，绝不能声称掌握邪方同伴名单或私密讨论。`
+  }
+  return common
 }
 
 const evilQuestStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
+  if (roleFor(state, seat) === 'oberon') {
+    const successes = state.missions.filter(mission => mission.success).length
+    const failures = state.missions.length - successes
+    const urgency = failures === 2
+      ? '邪方已经取得两次任务失败，本轮若达到失败门槛即可获胜。'
+      : successes === 2
+        ? '善方已经取得两次任务成功，本轮若再次成功就会进入刺杀。'
+        : ''
+    return `${urgency}你是奥伯伦，无法确认或协调队内其他邪方，也不会收到他们的失败票分工。根据公开任务记录、失败门槛和自身暴露风险独立选择；失败票直接推进邪方胜利，成功票必须有明确后续收益。`
+  }
   const proposal = proposalFor(state)
   const leaderIndex = state.seats.indexOf(proposal.leader)
   if (leaderIndex === -1) throw new Error(`Avalon proposal leader '${proposal.leader}' is not seated`)
@@ -438,7 +480,7 @@ const evilQuestStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
     ...state.seats.slice(0, leaderIndex + 1),
   ]
   const evilTeam = clockwiseAfterLeader.filter(candidate => (
-    proposal.team.includes(candidate) && EVIL_ROLES.has(roleFor(state, candidate))
+    proposal.team.includes(candidate) && participatesInAvalonEvilNetwork(roleFor(state, candidate))
   ))
   const threshold = missionFailThreshold(state)
   const successes = state.missions.filter(mission => mission.success).length
@@ -467,7 +509,7 @@ const phaseStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
         ? '当前是匿名队伍投票，且此前已有四次连续否决；本轮否决会让邪方立即获胜。只根据最终队伍是否推进你的阵营目标投票，不得把任务失败当作低成本试探。'
         : '当前是匿名队伍投票。只根据最终队伍是否推进你的阵营目标投票；任务失败会直接推进邪方胜利，不能当作低成本试探。'
     case 'quest':
-      return EVIL_ROLES.has(roleFor(state, seat))
+      return isAvalonEvilRole(roleFor(state, seat))
         ? evilQuestStrategyPrompt(state, seat)
         : '当前是任务执行阶段。你的角色只能提交成功；记住任务结果不会公开个人动作。'
     case 'evil-discussion':
@@ -479,6 +521,12 @@ const phaseStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
   }
 }
 
+const roleDeckSummary = (roleDeck: readonly AvalonRole[]): string => AVALON_ROLES
+  .map(role => ({ role, count: roleDeck.filter(candidate => candidate === role).length }))
+  .filter(entry => entry.count > 0)
+  .map(entry => `${entry.count} 名${avalonRoleLabel(entry.role)}`)
+  .join('、')
+
 /** Create one five-, six-, and seven-player Avalon definition.
  * @param config - resolved statement limit.
  * @returns configured rules.
@@ -486,7 +534,7 @@ const phaseStrategyPrompt = (state: AvalonState, seat: SeatId): string => {
 export function createAvalonDefinition(config: Required<Config>): GameDefinition<AvalonState> {
   return {
     id: 'avalon',
-    rulesVersion: 10,
+    rulesVersion: 11,
     configSchema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -494,8 +542,13 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
           type: 'integer', enum: [5, 6, 7], default: 5,
           description: '圆桌席位数；五人局、六人局和七人局都支持一名人类参与或全 AI 对局。',
         },
+        rolePreset: {
+          type: 'string', enum: ['basic', 'percival-morgana', 'mordred-oberon'],
+          default: DEFAULT_AVALON_ROLE_PRESET,
+          description: '经过平衡约束的角色组合；莫德雷德与奥伯伦组合仅支持七人局。',
+        },
         humanRole: {
-          type: 'string', enum: ['merlin', 'loyal-servant', 'assassin', 'minion'],
+          type: 'string', enum: AVALON_ROLES,
           description: '人类玩家指定身份；只有一名人类席位时可用，省略时由私有随机种子分配。',
         },
       },
@@ -503,22 +556,30 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
     validateConfig(value): GameJson {
       const candidate = value ?? {}
       const record = asRecord(candidate, 'Avalon config')
-      if (Object.keys(record).some(key => key !== 'playerCount' && key !== 'humanRole')) {
+      if (Object.keys(record).some(key => key !== 'playerCount' && key !== 'rolePreset' && key !== 'humanRole')) {
         throw new Error('Avalon config has unexpected fields')
       }
       const playerCount = record.playerCount ?? 5
       if (playerCount !== 5 && playerCount !== 6 && playerCount !== 7) {
         throw new Error('Avalon player count must be 5, 6, or 7')
       }
-      if (record.humanRole === undefined) return { playerCount }
-      if (typeof record.humanRole !== 'string' || !AVALON_ROLES.has(record.humanRole)) {
+      const rolePreset = record.rolePreset ?? DEFAULT_AVALON_ROLE_PRESET
+      if (typeof rolePreset !== 'string' || !isAvalonRolePreset(rolePreset)) {
+        throw new Error('Avalon role preset is invalid')
+      }
+      const rules = resolveAvalonRules(playerCount, rolePreset)
+      if (record.humanRole === undefined) return { playerCount, rolePreset }
+      if (typeof record.humanRole !== 'string' || !isAvalonRole(record.humanRole)
+        || !rules.roleDeck.includes(record.humanRole)) {
         throw new Error('Avalon human role is invalid')
       }
-      return { playerCount, humanRole: record.humanRole }
+      return { playerCount, rolePreset, humanRole: record.humanRole }
     },
     initial({ config: matchConfig, seats, randomSeed }): readonly GameRuleEvent[] {
       const resolvedMatchConfig = matchConfig as unknown as AvalonMatchConfig
       const requestedPlayerCount = resolvedMatchConfig.playerCount
+      const rolePreset = resolvedMatchConfig.rolePreset
+      const rules = resolveAvalonRules(requestedPlayerCount, rolePreset)
       if (seats.length !== requestedPlayerCount) {
         throw new Error(`Avalon ${requestedPlayerCount}-player setup requires exactly ${requestedPlayerCount} seats`)
       }
@@ -531,15 +592,22 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
       if (requestedRole !== undefined && humanCount !== 1) {
         throw new Error('Avalon humanRole requires exactly one human seat')
       }
-      const roles = assignment(seats, AVALON_RULES[requestedPlayerCount].roleDeck, randomSeed, requestedRole)
+      const roles = assignment(seats, rules.roleDeck, randomSeed, requestedRole)
       const leaderIndex = Number.parseInt(digest(`avalon:leader:${randomSeed}`).slice(0, 8), 16) % seats.length
-      return [{ type: 'avalon/started', data: { seats: seats.map(seat => seat.id), roles, leaderIndex } }]
+      return [{ type: 'avalon/started', data: { seats: seats.map(seat => seat.id), roles, rolePreset, leaderIndex } }]
     },
     reduce(state, event): AvalonState {
       if (event.type === 'avalon/started') {
-        const data = event.data as unknown as { seats: AvalonState['seats']; roles: AvalonState['roles']; leaderIndex: number }
+        const data = event.data as unknown as {
+          seats: AvalonState['seats']
+          roles: AvalonState['roles']
+          rolePreset: AvalonState['rolePreset']
+          leaderIndex: number
+        }
+        if (!isAvalonRolePreset(data.rolePreset)) throw new Error('Avalon start event has an invalid role preset')
         return {
-          seats: data.seats, roles: data.roles, phase: 'proposal', leaderIndex: data.leaderIndex,
+          seats: data.seats, roles: data.roles, rolePreset: data.rolePreset,
+          phase: 'proposal', leaderIndex: data.leaderIndex,
           missionIndex: 0, rejectedTeams: 0, proposal: undefined, statements: [], evilStatements: [],
           teamVotes: [], missions: [],
         }
@@ -727,16 +795,14 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
     view: project,
     modelPrompt(state, seat): string {
       const rules = rulesFor(state)
-      const loyalServants = rules.roleDeck.filter(role => role === 'loyal-servant').length
-      const minions = rules.roleDeck.filter(role => role === 'minion').length
       const approvalVotes = Math.floor(state.seats.length / 2) + 1
       return [
-        `你是 ${state.seats.length} 人阿瓦隆中的席位 ${seat}。角色包括梅林、${loyalServants} 名亚瑟的忠臣、刺客和 ${minions} 名莫德雷德的爪牙。`,
+        `你是 ${state.seats.length} 人阿瓦隆中的席位 ${seat}。本局采用“${avalonRolePresetInfo(state.rolePreset).label}”组合：${roleDeckSummary(rules.roleDeck)}。`,
         `五次任务的队伍人数依次为 ${rules.missionSizes.join('、')}，任务失败所需的失败票数依次为 ${rules.missionFailThresholds.join('、')}；一支队伍获得至少 ${approvalVotes} 票赞成才会通过。`,
         '任务失败票匿名提交，达到当轮门槛时任务失败，未达到时任务成功。任务记录中的失败票数是匿名失败动作的准确总数；只有邪方能提交失败，因此正数证明队内至少有同等数量的邪方，但不公开是谁。任务成功只说明失败票未达门槛，不证明队内全员属于善方。',
         '队伍投票匿名提交，结算只公开赞成票数和否决票数，不公开任何席位的选择。除你自己的已提交选择外，不得根据汇总票型断言某个席位投了赞成或否决。',
         '每次队伍投票结束后，队长顺时针交给下一席。队伍被否决时，连续否决计数增加一；任一队伍通过时，该计数立即清零，因此早先的否决不会永久占用五次机会。只有连续五支队伍都被否决或累计三次任务失败时，邪方才立即获胜。',
-        '三次任务成功后，邪方沿圆桌顺时针依次私密发言，刺客最后总结，再由刺客选择梅林目标。忠臣和梅林执行任务时只能选择成功。',
+        '三次任务成功后，除奥伯伦外的邪方协作成员沿圆桌顺时针依次私密发言，刺客最后总结，再由刺客选择梅林目标；奥伯伦既不参与也看不到密谈。所有善方角色执行任务时只能选择成功。',
         `队长先提交初选队伍并指定顺时针或逆时针发言方向，此时队长不发言；与队长相邻的席位沿指定方向开始，${state.seats.length - 1} 名非队长依次公开发言。听完其他玩家发言后，队长最后归票发言，并在同一个动作中提交最终队伍；最终队伍可以与初选相同，也可以更换成员，随后所有玩家只对这支最终队伍投票。`,
         factionStrategyPrompt(state, seat),
         phaseStrategyPrompt(state, seat),

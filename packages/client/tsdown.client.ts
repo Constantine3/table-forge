@@ -32,6 +32,9 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
  */
 export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
 
+/** Pure, browser-safe game rule modules with no plugin runtime identity. */
+export const INLINE_SAFE_EXACT: readonly string[] = ['@deepseek-ai/dsh-game-avalon-rules']
+
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
  * would read them as plugin packages. They carry no cross-plugin runtime
@@ -207,7 +210,7 @@ function clientConfig(id: string, entry: string): UserConfig {
     noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
     plugins: [{
       // Bundle purity gate (build-time mirror of the module-edge rules):
-      // platform seed entries stay external, inline-safe wire layers inline,
+      // platform seed entries stay external, inline-safe pure contributions inline,
       // and every other @deepseek-ai value import is a build error — a
       // cross-plugin value import either inlines a duplicate runtime instance
       // or requires a specifier the frozen module table cannot answer.
@@ -217,9 +220,9 @@ function clientConfig(id: string, entry: string): UserConfig {
         if (!source.startsWith('@deepseek-ai/')) return null
         if (CLIENT_EXTERNALS.includes(source)) return null // platform module: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
-        if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
+        if (INLINE_SAFE.test(source) || INLINE_SAFE_EXACT.includes(source) || GENERATED_REMOTE.test(source)) return null // pure contribution: inline is the point
         throw new Error(
-          `client bundle purity: "${source}" is not a platform module (CLIENT_EXTERNALS), an inline-safe wire layer, or a generated /remote contribution — `
+          `client bundle purity: "${source}" is not a platform module (CLIENT_EXTERNALS), an inline-safe pure contribution, or a generated /remote contribution — `
           + 'cross-plugin value imports are forbidden; collaborate through cordis services (type-only imports are erased and never reach this gate)',
         )
       },

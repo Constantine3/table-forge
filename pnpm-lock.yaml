@@ -1251,6 +1251,9 @@ importers:
       '@deepseek-ai/dsh-game-avalon':
         specifier: workspace:^
         version: link:../../game/game-avalon
+      '@deepseek-ai/dsh-game-avalon-rules':
+        specifier: workspace:^
+        version: link:../../game/game-avalon-rules
       '@deepseek-ai/dsh-game-controller-agent':
         specifier: workspace:^
         version: link:../../game/game-controller-agent
@@ -2096,6 +2099,9 @@ importers:
       '@deepseek-ai/dsh-game':
         specifier: workspace:^
         version: link:../../game/game
+      '@deepseek-ai/dsh-game-avalon-rules':
+        specifier: workspace:^
+        version: link:../../game/game-avalon-rules
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -4574,9 +4580,21 @@ importers:
       '@deepseek-ai/dsh-game':
         specifier: workspace:^
         version: link:../game
+      '@deepseek-ai/dsh-game-avalon-rules':
+        specifier: workspace:^
+        version: link:../game-avalon-rules
       '@deepseek-ai/dsh-game-engine':
         specifier: workspace:^
         version: link:../game-engine
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/game/game-avalon-rules:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

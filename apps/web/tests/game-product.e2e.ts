@@ -72,7 +72,8 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   })
   await legacyPersistence.create({
     id: MatchId(AVALON_EVIL_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 10, config: { playerCount: 6, humanRole: 'assassin' }, createdAt: 2,
+    gameId: 'avalon', rulesVersion: 11,
+    config: { playerCount: 6, rolePreset: 'basic', humanRole: 'assassin' }, createdAt: 2,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
       ...[1, 2, 3, 4, 5].map(index => ({
@@ -87,6 +88,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
           ruleType: 'avalon/started',
           ruleData: {
             seats: ['human', 'ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5'], leaderIndex: 0,
+            rolePreset: 'basic',
             roles: {
               human: 'assassin', 'ai-1': 'minion', 'ai-2': 'merlin',
               'ai-3': 'loyal-servant', 'ai-4': 'loyal-servant', 'ai-5': 'loyal-servant',
@@ -235,6 +237,16 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   expect(await page.getByLabel('游戏人数').inputValue()).toBe('7')
   expect(await page.getByLabel('你的角色').count()).toBe(0)
   expect(await page.getByLabel('AI 席位 7').count()).toBe(1)
+  expect(await page.getByRole('button', { name: /莫德雷德与奥伯伦/ }).count()).toBe(1)
+  expect(await page.getByText('派西维尔 × 1', { exact: true }).count()).toBe(1)
+  const merlinRole = page.getByLabel('梅林 × 1。善方。知道除莫德雷德外的邪方，但必须隐藏自己。', { exact: true })
+  await merlinRole.hover()
+  await expect.poll(() => merlinRole.evaluate(element => getComputedStyle(element, '::after').opacity)).toBe('1')
+  expect(await merlinRole.evaluate(element => getComputedStyle(element, '::after').content))
+    .toContain('善方 · 知道除莫德雷德外的邪方，但必须隐藏自己。')
+  await page.mouse.move(0, 0)
+  await merlinRole.focus()
+  await expect.poll(() => merlinRole.evaluate(element => getComputedStyle(element, '::after').opacity)).toBe('1')
   await compareOrRefreshGolden(AVALON_SETUP_EXPECTED, await captureStableAria(page, 'main', harnessHome), MODE)
 
   await page.reload()
@@ -244,7 +256,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   const discussionPersistence = new SqliteGamePersistence(join(harnessHome, 'games.sqlite'))
   await discussionPersistence.create({
     id: MatchId(AVALON_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 10, config: { playerCount: 5 }, createdAt: 3,
+    gameId: 'avalon', rulesVersion: 11, config: { playerCount: 5, rolePreset: 'basic' }, createdAt: 3,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
       ...[1, 2, 3, 4].map(index => ({
@@ -259,6 +271,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
           ruleType: 'avalon/started',
           ruleData: {
             seats: ['human', 'ai-1', 'ai-2', 'ai-3', 'ai-4'], leaderIndex: 0,
+            rolePreset: 'basic',
             roles: { human: 'merlin', 'ai-1': 'assassin', 'ai-2': 'minion', 'ai-3': 'loyal-servant', 'ai-4': 'loyal-servant' },
           },
         },
@@ -320,7 +333,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   expect(evilRequest?.body).toMatchObject({ max_completion_tokens: 16_384 })
   expect(evilRequest?.body).toMatchObject({ reasoning_effort: 'high' })
   expect(JSON.stringify(evilRequest?.body)).toContain('make-evil-statement')
-  expect(JSON.stringify(evilRequest?.body)).toContain('邪方沿圆桌顺时针依次私密发言')
+  expect(JSON.stringify(evilRequest?.body)).toContain('除奥伯伦外的邪方协作成员沿圆桌顺时针依次私密发言')
   expect(JSON.stringify(evilRequest?.body)).toContain('任一队伍通过时，该计数立即清零')
   expect(JSON.stringify(evilRequest?.body)).toContain('结算只公开赞成票数和否决票数')
   expect(JSON.stringify(evilRequest?.body)).toContain('不得根据汇总票型断言某个席位投了赞成或否决')

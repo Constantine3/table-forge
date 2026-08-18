@@ -3,7 +3,7 @@
   - text: LLM 原生游戏引擎
   - button "开启后台回合通知"
   - button "← 返回游戏列表"
-  - paragraph: 五至七人 · 预设角色组合
+  - paragraph: 五至八人 · 预设角色组合
   - heading "阿瓦隆" [level=1]
   - paragraph: 选择参与方式、圆桌人数和平衡角色组合，并为每名 AI 分别选择模型提供方。
   - button "你与 AI"
@@ -12,7 +12,8 @@
   - combobox "游戏人数":
     - option "五人局"
     - option "六人局"
-    - option "七人局" [selected]
+    - option "七人局"
+    - option "八人局" [selected]
   - group "角色组合":
     - text: 角色组合
     - button "基础身份 信息关系最直接，适合熟悉任务、组队和匿名投票。":
@@ -21,10 +22,10 @@
     - button "派西维尔与莫甘娜 派西维尔看到两名梅林候选，莫甘娜负责伪装。":
       - strong: 派西维尔与莫甘娜
       - text: 派西维尔看到两名梅林候选，莫甘娜负责伪装。
-    - button "莫德雷德与奥伯伦 七人进阶组合：梅林看不到莫德雷德，奥伯伦脱离邪方协作。":
+    - button "莫德雷德与奥伯伦 七至八人进阶组合：梅林看不到莫德雷德，奥伯伦脱离邪方协作。":
       - strong: 莫德雷德与奥伯伦
-      - text: 七人进阶组合：梅林看不到莫德雷德，奥伯伦脱离邪方协作。
-  - text: 梅林 × 1 善方 · 知道除莫德雷德外的邪方，但必须隐藏自己。 派西维尔 × 1 亚瑟的忠臣 × 2 刺客 × 1 莫甘娜 × 1 莫德雷德的爪牙 × 1 AI 席位 1
+      - text: 七至八人进阶组合：梅林看不到莫德雷德，奥伯伦脱离邪方协作。
+  - text: 梅林 × 1 善方 · 知道除莫德雷德外的邪方，但必须隐藏自己。 派西维尔 × 1 亚瑟的忠臣 × 3 刺客 × 1 莫甘娜 × 1 莫德雷德的爪牙 × 1 AI 席位 1
   - combobox "AI 席位 1":
     - option "DeepSeek Self Deployment" [selected]
     - option "Hy3 TokenHub"
@@ -50,6 +51,10 @@
     - option "Hy3 TokenHub"
   - text: AI 席位 7
   - combobox "AI 席位 7":
+    - option "DeepSeek Self Deployment" [selected]
+    - option "Hy3 TokenHub"
+  - text: AI 席位 8
+  - combobox "AI 席位 8":
     - option "DeepSeek Self Deployment" [selected]
     - option "Hy3 TokenHub"
   - button "进入圆桌"

@@ -5,6 +5,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-game/client'
 import type { GameWireJson } from '@deepseek-ai/dsh-game/types'
 import {
+  AVALON_RULES_VERSION,
   AVALON_ROLES,
   DEFAULT_AVALON_ROLE_PRESET,
   avalonRoleAlignment,
@@ -142,15 +143,29 @@ const seatPosition = (index: number, count: number): { left: string; top: string
   }
 }
 
+const AVALON_PLAYER_COUNTS = [5, 6, 7, 8] as const
+const AVALON_PLAYER_COUNT_LABELS: Readonly<Record<AvalonPlayerCount, string>> = {
+  5: '五人局', 6: '六人局', 7: '七人局', 8: '八人局',
+}
+
+const playerCountsFromSchema = (schema: GameWireJson): readonly AvalonPlayerCount[] => {
+  const values = (schema as {
+    properties?: { playerCount?: { enum?: unknown } }
+  } | null)?.properties?.playerCount?.enum
+  if (!Array.isArray(values)) return []
+  return AVALON_PLAYER_COUNTS.filter(count => values.includes(count))
+}
+
 /** Render the Avalon choice in the game catalog. */
 export function AvalonCatalogItem({ selectGame }: CatalogProps) {
   return <button className={css.catalogCard} onClick={() => { selectGame('avalon') }}>
-    <span>五至七人 · 隐藏身份</span><strong>阿瓦隆</strong><small>亲自参与，或观看 AI 在任务与谎言中推演</small>
+    <span>五至八人 · 隐藏身份</span><strong>阿瓦隆</strong><small>亲自参与，或观看 AI 在任务与谎言中推演</small>
   </button>
 }
 
-/** Render five-, six-, or seven-player Avalon setup and the active board. */
+/** Render five- through eight-player Avalon setup and the active board. */
 export function AvalonSurface({
+  game: gameInfo,
   match,
   providers,
   busy,
@@ -159,10 +174,14 @@ export function AvalonSurface({
   resetMatch,
   retryBlocked,
 }: SurfaceProps) {
+  const supportedPlayerCounts = playerCountsFromSchema(gameInfo.configSchema)
+  const rulesCompatible = gameInfo.rulesVersion === AVALON_RULES_VERSION
   const [mode, setMode] = useState<AvalonMode>('human-ai')
-  const [playerCount, setPlayerCount] = useState<AvalonPlayerCount>(6)
+  const [playerCount, setPlayerCount] = useState<AvalonPlayerCount>(() => (
+    supportedPlayerCounts.includes(6) ? 6 : supportedPlayerCounts[0] ?? 6
+  ))
   const [rolePreset, setRolePreset] = useState<AvalonRolePreset>(DEFAULT_AVALON_ROLE_PRESET)
-  const [providerIds, setProviderIds] = useState<string[]>(['', '', '', '', '', '', ''])
+  const [providerIds, setProviderIds] = useState<string[]>(['', '', '', '', '', '', '', ''])
   const [humanRole, setHumanRole] = useState<AvalonRole | ''>('')
   const [team, setTeam] = useState<string[]>([])
   const [finalTeam, setFinalTeam] = useState<string[] | undefined>()
@@ -173,8 +192,9 @@ export function AvalonSurface({
   const aiSeatCount = playerCount - (mode === 'human-ai' ? 1 : 0)
   const selectedProviders = providerIds.slice(0, aiSeatCount).map(id => providerAt(providers, id))
   const create = (): void => {
-    /* v8 ignore next -- the setup button is disabled while any AI provider is unavailable. */
-    if (selectedProviders.some(provider => provider === undefined)) return
+    /* v8 ignore next -- the setup button is disabled unless the current catalog and providers allow creation. */
+    if (!rulesCompatible || supportedPlayerCounts.length === 0
+      || selectedProviders.some(provider => provider === undefined)) return
     const availableProviders = selectedProviders.filter(
       (provider): provider is GameProviderOption => provider !== undefined,
     )
@@ -185,6 +205,7 @@ export function AvalonSurface({
     }))
     void createMatch({
       gameId: 'avalon',
+      expectedRulesVersion: AVALON_RULES_VERSION,
       config: { playerCount, rolePreset, ...(mode === 'human-ai' && humanRole !== '' ? { humanRole } : {}) },
       seats: mode === 'human-ai'
         ? [{ id: 'human', displayName: '你', controller: { type: 'human' } }, ...aiSeats]
@@ -202,8 +223,14 @@ export function AvalonSurface({
   }
 
   if (match === undefined) return <section className={css.setup}>
-    <p className={css.eyebrow}>五至七人 · 预设角色组合</p><h1>阿瓦隆</h1>
+    <p className={css.eyebrow}>五至八人 · 预设角色组合</p><h1>阿瓦隆</h1>
     <p className={css.lead}>选择参与方式、圆桌人数和平衡角色组合，并为每名 AI 分别选择模型提供方。</p>
+    {!rulesCompatible && <p className={css.warning} role="alert">
+      浏览器界面与当前服务的阿瓦隆规则版本不一致。请重启服务并刷新页面后再开局。
+    </p>}
+    {rulesCompatible && supportedPlayerCounts.length === 0 && <p className={css.warning} role="alert">
+      当前服务没有公布可用的阿瓦隆人数。请检查服务配置并刷新页面。
+    </p>}
     <div className={css.segmented}>
       <button data-active={mode === 'human-ai'} onClick={() => { setMode('human-ai') }}>你与 AI</button>
       <button data-active={mode === 'ai-only'} onClick={() => { setMode('ai-only') }}>全 AI 对局</button>
@@ -220,9 +247,9 @@ export function AvalonSurface({
         setRolePreset(nextRolePreset)
         setHumanRole(current => current !== '' && !nextDeck.includes(current) ? '' : current)
       }}>
-        <option value={5}>五人局</option>
-        <option value={6}>六人局</option>
-        <option value={7}>七人局</option>
+        {supportedPlayerCounts.map(count => (
+          <option key={count} value={count}>{AVALON_PLAYER_COUNT_LABELS[count]}</option>
+        ))}
       </select>
     </label>
     <fieldset className={css.presets}>
@@ -268,7 +295,8 @@ export function AvalonSurface({
     {!providers.some(provider => provider.available) && <p className={css.warning}>没有从当前游戏主机可达的提供方。</p>}
     <button
       className={css.primary}
-      disabled={busy || selectedProviders.some(provider => provider === undefined)}
+      disabled={busy || !rulesCompatible || supportedPlayerCounts.length === 0
+        || selectedProviders.some(provider => provider === undefined)}
       onClick={create}
     >{busy ? '正在分配身份…' : '进入圆桌'}</button>
   </section>

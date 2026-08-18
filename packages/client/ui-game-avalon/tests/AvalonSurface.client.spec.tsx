@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { GameRemoteCreateRequest, GameRemoteMatchView, GameRemoteSubmitRequest } from '@deepseek-ai/dsh-game/types'
+import type {
+  GameRemoteCreateRequest, GameRemoteGameInfo, GameRemoteMatchView, GameRemoteSubmitRequest,
+} from '@deepseek-ai/dsh-game/types'
+import { AVALON_RULES_VERSION } from '@deepseek-ai/dsh-game-avalon-rules'
 import { apply, inject } from '../src/client/index.ts'
 import { AvalonCatalogItem, AvalonSurface } from '../src/client/AvalonSurface.tsx'
 
@@ -33,8 +36,12 @@ const operations = () => ({
   resetMatch: vi.fn(() => Promise.resolve()), retryBlocked: vi.fn(() => Promise.resolve()),
   loadAudit: vi.fn(() => Promise.resolve()),
 })
-const props = (match: GameRemoteMatchView | undefined, actions = operations()) => ({
-  game: { id: 'avalon', configSchema: {} }, match, providers: [provider], audit: undefined, busy: false, ...actions,
+const gameInfo: GameRemoteGameInfo = {
+  id: 'avalon', rulesVersion: AVALON_RULES_VERSION,
+  configSchema: { properties: { playerCount: { enum: [5, 6, 7, 8] } } },
+}
+const props = (match: GameRemoteMatchView | undefined, actions = operations(), game: GameRemoteGameInfo = gameInfo) => ({
+  game, match, providers: [provider], audit: undefined, busy: false, ...actions,
 })
 
 afterEach(cleanup)
@@ -88,6 +95,7 @@ describe('Avalon game UI contribution', () => {
     const request = actions.createMatch.mock.calls[0]![0]
     expect(request).toMatchObject({
       gameId: 'avalon',
+      expectedRulesVersion: AVALON_RULES_VERSION,
       config: { playerCount: 6, rolePreset: 'percival-morgana', humanRole: 'assassin' },
     })
     expect(request.seats).toHaveLength(6)
@@ -97,7 +105,7 @@ describe('Avalon game UI contribution', () => {
     })))
   })
 
-  it('creates five-, six-, or seven-player all-AI tables without a human role', () => {
+  it('creates five- through eight-player all-AI tables without a human role', () => {
     const actions = operations()
     render(<AvalonSurface {...props(undefined, actions)} />)
     fireEvent.click(screen.getByRole('button', { name: '全 AI 对局' }))
@@ -112,17 +120,50 @@ describe('Avalon game UI contribution', () => {
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(6)
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '7' } })
     expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(7)
-    expect(screen.getByText('亚瑟的忠臣 × 2')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '8' } })
+    expect(screen.getAllByLabelText(/^AI 席位/)).toHaveLength(8)
+    expect(screen.getByText('亚瑟的忠臣 × 3')).toBeTruthy()
     expect(screen.getByText('莫德雷德的爪牙 × 1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
 
     const request = actions.createMatch.mock.calls[0]![0]
     expect(request).toMatchObject({
-      gameId: 'avalon', config: { playerCount: 7, rolePreset: 'percival-morgana' },
+      gameId: 'avalon', expectedRulesVersion: AVALON_RULES_VERSION,
+      config: { playerCount: 8, rolePreset: 'percival-morgana' },
     })
-    expect(request.seats).toHaveLength(7)
+    expect(request.seats).toHaveLength(8)
     expect(request.seats.every(seat => seat.controller.type === 'agent')).toBe(true)
-    expect(request.seats.map(seat => seat.id)).toEqual(['ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5', 'ai-6', 'ai-7'])
+    expect(request.seats.map(seat => seat.id)).toEqual([
+      'ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-5', 'ai-6', 'ai-7', 'ai-8',
+    ])
+  })
+
+  it('blocks setup when the browser and service rules differ or the service publishes no table sizes', () => {
+    const staleActions = operations()
+    const stale = render(<AvalonSurface {...props(undefined, staleActions, {
+      id: 'avalon', configSchema: { properties: { playerCount: { enum: [5, 6, 7] } } },
+    })} />)
+    expect(screen.getByRole('alert').textContent).toContain('规则版本不一致')
+    expect(within(screen.getByLabelText('游戏人数')).queryByRole('option', { name: '八人局' })).toBeNull()
+    expect(screen.getByRole('button', { name: '进入圆桌' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
+    expect(staleActions.createMatch).not.toHaveBeenCalled()
+    stale.unmount()
+
+    const limited = render(<AvalonSurface {...props(undefined, operations(), {
+      id: 'avalon', rulesVersion: AVALON_RULES_VERSION,
+      configSchema: { properties: { playerCount: { enum: [5, 7] } } },
+    })} />)
+    expect(screen.getByLabelText('游戏人数')).toHaveProperty('value', '5')
+    limited.unmount()
+
+    const missingActions = operations()
+    render(<AvalonSurface {...props(undefined, missingActions, {
+      id: 'avalon', rulesVersion: AVALON_RULES_VERSION, configSchema: null,
+    })} />)
+    expect(screen.getByRole('alert').textContent).toContain('没有公布可用的阿瓦隆人数')
+    expect(screen.getByRole('button', { name: '进入圆桌' }).hasAttribute('disabled')).toBe(true)
+    expect(missingActions.createMatch).not.toHaveBeenCalled()
   })
 
   it('offers only fair presets and falls back when a table size does not support the selection', () => {
@@ -142,9 +183,13 @@ describe('Avalon game UI contribution', () => {
     fireEvent.click(screen.getByRole('button', { name: /莫德雷德与奥伯伦/ }))
     expect(screen.getByLabelText('你的角色')).toHaveProperty('value', 'merlin')
     fireEvent.change(screen.getByLabelText('你的角色'), { target: { value: 'oberon' } })
+    fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '8' } })
+    expect(screen.getByRole('button', { name: /莫德雷德与奥伯伦/ }).getAttribute('data-active')).toBe('true')
+    expect(screen.getByLabelText('你的角色')).toHaveProperty('value', 'oberon')
+    expect(screen.getByText('亚瑟的忠臣 × 4')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '进入圆桌' }))
     expect(actions.createMatch.mock.calls[0]![0].config).toEqual({
-      playerCount: 7, rolePreset: 'mordred-oberon', humanRole: 'oberon',
+      playerCount: 8, rolePreset: 'mordred-oberon', humanRole: 'oberon',
     })
 
     fireEvent.change(screen.getByLabelText('游戏人数'), { target: { value: '5' } })
@@ -216,46 +261,49 @@ describe('Avalon game UI contribution', () => {
       .every(option => option.textContent?.includes('当前不可用') ?? false)).toBe(true)
   })
 
-  it('renders all seven seats around the circle and labels the fourth mission threshold', () => {
-    const sevenPlayerSeats = [
+  it('renders all eight seats around the circle and labels the fourth mission threshold', () => {
+    const eightPlayerSeats = [
       ...seats,
       { id: 'ai-5', displayName: 'AI 5', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
       { id: 'ai-6', displayName: 'AI 6', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
+      { id: 'ai-7', displayName: 'AI 7', controller: { type: 'agent' as const, provider: 'local', model: 'model' } },
     ]
-    const sevenPlayerGame = {
+    const eightPlayerGame = {
       ...publicGame,
-      playerCount: 7,
-      roleDeck: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'minion', 'minion'],
-      missionSizes: [2, 3, 3, 4, 4],
+      playerCount: 8,
+      roleDeck: [
+        'merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'minion', 'minion',
+      ],
+      missionSizes: [3, 4, 4, 5, 5],
       missionFailThresholds: [1, 1, 1, 2, 1],
     } as const
     const match: GameRemoteMatchView = {
-      id: 'seven', gameId: 'avalon', revision: 1, status: 'active', seats: sevenPlayerSeats,
+      id: 'eight', gameId: 'avalon', revision: 1, status: 'active', seats: eightPlayerSeats,
       window: { id: 'wait', requiredSeats: [], submittedSeats: [], canAct: false },
       blockedSeats: [],
-      game: sevenPlayerGame,
+      game: eightPlayerGame,
     }
     const view = render(<AvalonSurface {...(props(match) as Parameters<typeof AvalonSurface>[0])} />)
     const roundTable = view.container.querySelector('[data-layout="circle"]')!
-    expect(roundTable.querySelectorAll('[data-position]')).toHaveLength(7)
+    expect(roundTable.querySelectorAll('[data-position]')).toHaveLength(8)
     const roleComposition = screen.getByLabelText('角色构成')
     expect(within(roleComposition).getByText('梅林 × 1')).toBeTruthy()
-    expect(within(roleComposition).getByText('亚瑟的忠臣 × 3')).toBeTruthy()
+    expect(within(roleComposition).getByText('亚瑟的忠臣 × 4')).toBeTruthy()
     expect(within(roleComposition).getByText('刺客 × 1')).toBeTruthy()
     expect(within(roleComposition).getByText('莫德雷德的爪牙 × 2')).toBeTruthy()
-    expect(screen.getAllByText('4 人')).toHaveLength(2)
+    expect(screen.getAllByText('5 人')).toHaveLength(2)
     expect(screen.getByText('需 2 票失败')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /圆桌成员AI 6/ }).getAttribute('style')).toMatch(/left:|top:/)
+    expect(screen.getByRole('button', { name: /圆桌成员AI 7/ }).getAttribute('style')).toMatch(/left:|top:/)
 
     view.rerender(<AvalonSurface {...props({
       ...match,
       game: {
-        ...sevenPlayerGame,
+        ...eightPlayerGame,
         missions: [
-          { number: 1, team: ['human', 'ai-1'], failCount: 0, success: true },
-          { number: 2, team: ['human', 'ai-1', 'ai-2'], failCount: 0, success: true },
-          { number: 3, team: ['human', 'ai-1', 'ai-2'], failCount: 1, success: false },
-          { number: 4, team: ['human', 'ai-1', 'ai-2', 'ai-3'], failCount: 2, success: false },
+          { number: 1, team: ['human', 'ai-1', 'ai-2'], failCount: 0, success: true },
+          { number: 2, team: ['human', 'ai-1', 'ai-2', 'ai-3'], failCount: 0, success: true },
+          { number: 3, team: ['human', 'ai-1', 'ai-2', 'ai-3'], failCount: 1, success: false },
+          { number: 4, team: ['human', 'ai-1', 'ai-2', 'ai-3', 'ai-4'], failCount: 2, success: false },
         ],
       },
     })} />)

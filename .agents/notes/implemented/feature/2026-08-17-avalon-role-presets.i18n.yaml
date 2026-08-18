@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-17-avalon-role-presets.md
-2026-08-17-avalon-role-presets.md: c876b81c727979c99f2a79237ae37f142f23860d
-2026-08-17-avalon-role-presets.zh.md: 38082d3ec1d66b9751dd00573c9ec425b0a5d490
+2026-08-17-avalon-role-presets.md: 51a7ee6e9817ffa3a66f68834872e662a0b6f13d
+2026-08-17-avalon-role-presets.zh.md: f892dbe6be815984d688e1c25e8a2929f245522a

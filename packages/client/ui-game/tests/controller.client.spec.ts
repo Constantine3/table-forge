@@ -87,7 +87,10 @@ describe('generic game controller', () => {
   })
 
   it('loads provider availability, game metadata, and durable tables', async () => {
-    const games = [{ id: 'rps', configSchema: { type: 'object' } }, { id: 'avalon', configSchema: { type: 'object' } }]
+    const games = [
+      { id: 'rps', rulesVersion: 1, configSchema: { type: 'object' } },
+      { id: 'avalon', rulesVersion: 12, configSchema: { type: 'object' } },
+    ]
     const bench = controller({ catalog: vi.fn(() => Promise.resolve(ok(games))) })
     await bench.controller.loadProviders()
     await bench.controller.loadGames()
@@ -131,7 +134,9 @@ describe('generic game controller', () => {
   it('creates, opens, submits, retries all blocked seats, and resets matches', async () => {
     const bench = controller()
     bench.controller.select('rps')
-    await bench.controller.create({ gameId: 'rps', config: { roundCount: 1 }, seats: match.seats })
+    await bench.controller.create({
+      gameId: 'rps', expectedRulesVersion: 1, config: { roundCount: 1 }, seats: match.seats,
+    })
     expect(localStorage.getItem('table-forge.active-match')).toBe(match.id)
     await bench.controller.submit({ matchId: match.id, windowId: 'window-1', commandId: 'command', action: { gesture: 'rock' } })
     await bench.controller.retry()
@@ -430,7 +435,7 @@ describe('generic game controller', () => {
     let changed: ((id: string) => void) | undefined
     const register = vi.fn((_registration: unknown) => () => undefined)
     const remoteMatches = {
-      catalog: vi.fn(() => Promise.resolve(ok([{ id: 'rps', configSchema: {} }]))),
+      catalog: vi.fn(() => Promise.resolve(ok([{ id: 'rps', rulesVersion: 1, configSchema: {} }]))),
       list: vi.fn(() => Promise.resolve(ok([]))),
       providerAvailability: vi.fn(() => Promise.resolve(ok([]))),
       get: vi.fn(() => Promise.resolve(ok({ ...match, revision: 3 }))),
@@ -466,7 +471,7 @@ describe('generic game controller', () => {
     await vi.waitFor(() => { expect(remoteMatches.get).toHaveBeenCalledTimes(2) })
 
     injected.selectGame('avalon')
-    await injected.createMatch({ gameId: 'rps', config: {}, seats: match.seats })
+    await injected.createMatch({ gameId: 'rps', expectedRulesVersion: 1, config: {}, seats: match.seats })
     await injected.submitAction({ matchId: match.id, windowId: 'w', commandId: 'c', action: {} })
     await injected.retryBlocked()
     await injected.resetMatch()

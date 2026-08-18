@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`dsh-game` defines versioned deterministic games and the durable match operations used by controllers and product clients. A game plugin publishes its deployment-resolved configuration schema, validates JSON configuration and seat-specific actions, emits rule events, reduces them to state, declares one pending action window, and projects public or seat-scoped views. An action window also declares whether its participating seat ids and submission status are public or visible only to required seats.
+`dsh-game` defines versioned deterministic games and the durable match operations used by controllers and product clients. A game plugin publishes its deployment-resolved configuration schema, validates JSON configuration and seat-specific actions, emits rule events, reduces them to state, declares one pending action window, and projects public or seat-scoped views. The Remote game catalog pairs that schema with the current rules version; a setup client echoes the observed version in its create request so a stale client cannot create a match under changed rules. A missing catalog version identifies a pre-handshake Host and requires clients to disable creation. An action window also declares whether its participating seat ids and submission status are public or visible only to required seats.
 
 The match log and an AI player's Session log have separate ownership. Match events are the authoritative game result; Session events reconstruct only what that player saw and sent to its model. Definitions must not perform I/O, call a model, or mutate reducer inputs.
 

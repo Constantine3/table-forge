@@ -48,6 +48,7 @@ export function RpsSurface({
   const schema = gameInfo.configSchema as { properties?: { roundCount?: { default?: unknown; maximum?: unknown } } }
   const defaultRounds = Number(schema.properties?.roundCount?.default)
   const maxRounds = Number(schema.properties?.roundCount?.maximum)
+  const rulesVersion = gameInfo.rulesVersion
   const [roundCount, setRoundCount] = useState(Number.isInteger(defaultRounds) ? defaultRounds : 3)
   const [providerIds, setProviderIds] = useState<[string, string]>(['', ''])
   const providerFor = (index: 0 | 1): GameProviderOption | undefined => (
@@ -58,6 +59,8 @@ export function RpsSurface({
     setProviderIds(current => current.map((value, position) => position === index ? provider : value) as [string, string])
   }
   const create = (): void => {
+    /* v8 ignore next -- the setup button is disabled for a pre-handshake Host. */
+    if (rulesVersion === undefined) return
     const first = providerFor(0)
     const second = providerFor(1)
     /* v8 ignore next -- the start button is disabled while a required provider is unavailable. */
@@ -65,7 +68,9 @@ export function RpsSurface({
     const seats = mode === 'human-ai'
       ? [{ id: 'human', displayName: '你', controller: { type: 'human' as const } }, agentSeat('ai-1', 0, first)]
       : [agentSeat('ai-1', 0, first), agentSeat('ai-2', 1, second as GameProviderOption)]
-    void createMatch({ gameId: 'rps', config: { roundCount }, seats })
+    void createMatch({
+      gameId: 'rps', expectedRulesVersion: rulesVersion, config: { roundCount }, seats,
+    })
   }
   const choose = (choice: string): void => {
     /* v8 ignore next -- choice buttons render only for an actionable window. */
@@ -77,6 +82,9 @@ export function RpsSurface({
   if (match === undefined) return <section className={css.setup}>
     <p className={css.eyebrow}>经典同时行动</p><h1>剪刀 · 石头 · 布</h1>
     <p className={css.lead}>每轮动作会封存到两边都已选择，再由规则引擎同时揭晓。</p>
+    {rulesVersion === undefined && <p className={css.warning} role="alert">
+      浏览器界面与当前服务版本不一致。请重启服务并刷新页面后再开局。
+    </p>}
     <div className={css.segmented}>
       <button data-active={mode === 'human-ai'} onClick={() => { setMode('human-ai') }}>你对 AI</button>
       <button data-active={mode === 'ai-ai'} onClick={() => { setMode('ai-ai') }}>AI 对 AI</button>
@@ -104,7 +112,7 @@ export function RpsSurface({
     })}
     <button
       className={css.primary}
-      disabled={busy || !Number.isInteger(maxRounds) || providerFor(0) === undefined
+      disabled={busy || rulesVersion === undefined || !Number.isInteger(maxRounds) || providerFor(0) === undefined
         || (mode === 'ai-ai' && providerFor(1) === undefined)}
       onClick={create}
     >{busy ? '正在开桌…' : '开始对局'}</button>

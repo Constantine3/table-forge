@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-14-event-sourced-llm-game-engine.md
-2026-08-14-event-sourced-llm-game-engine.md: 2832d5c8f184bc79f8e1c1005b11d056de24e69f
-2026-08-14-event-sourced-llm-game-engine.zh.md: 2afeb4cabce0cc3c5fd5d672b34d37fb1941d9c0
+2026-08-14-event-sourced-llm-game-engine.md: 76a0caac1c892acac1a8e36f11756dfae35915c6
+2026-08-14-event-sourced-llm-game-engine.zh.md: 6f99cc383bb5e362f4e714b9f7fbd15e6cd8641d

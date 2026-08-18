@@ -1,10 +1,11 @@
-/** Five-, six-, and seven-player Avalon rules as a deterministic game plugin. @module @deepseek-ai/dsh-game-avalon */
+/** Five- through eight-player Avalon rules as a deterministic game plugin. @module @deepseek-ai/dsh-game-avalon */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   GameActionSpec, GameDefinition, GameJson, GameRuleEvent, MatchSeatSpec, SeatId,
 } from '@deepseek-ai/dsh-game'
 import {
+  AVALON_RULES_VERSION,
   AVALON_ROLES,
   DEFAULT_AVALON_ROLE_PRESET,
   avalonRoleAlignment,
@@ -113,8 +114,8 @@ const roleFor = (state: AvalonState, seat: SeatId): AvalonRole => required(state
 const proposalFor = (state: AvalonState): Proposal => required(state.proposal, 'the active proposal')
 
 const playerCountFor = (seats: readonly unknown[]): AvalonPlayerCount => {
-  if (seats.length !== 5 && seats.length !== 6 && seats.length !== 7) {
-    throw new Error('Avalon requires exactly five, six, or seven seats')
+  if (seats.length !== 5 && seats.length !== 6 && seats.length !== 7 && seats.length !== 8) {
+    throw new Error('Avalon requires exactly five, six, seven, or eight seats')
   }
   return seats.length
 }
@@ -527,25 +528,25 @@ const roleDeckSummary = (roleDeck: readonly AvalonRole[]): string => AVALON_ROLE
   .map(entry => `${entry.count} 名${avalonRoleLabel(entry.role)}`)
   .join('、')
 
-/** Create one five-, six-, and seven-player Avalon definition.
+/** Create one five- through eight-player Avalon definition.
  * @param config - resolved statement limit.
  * @returns configured rules.
  */
 export function createAvalonDefinition(config: Required<Config>): GameDefinition<AvalonState> {
   return {
     id: 'avalon',
-    rulesVersion: 11,
+    rulesVersion: AVALON_RULES_VERSION,
     configSchema: {
       type: 'object', additionalProperties: false,
       properties: {
         playerCount: {
-          type: 'integer', enum: [5, 6, 7], default: 5,
-          description: '圆桌席位数；五人局、六人局和七人局都支持一名人类参与或全 AI 对局。',
+          type: 'integer', enum: [5, 6, 7, 8], default: 5,
+          description: '圆桌席位数；五至八人局都支持一名人类参与或全 AI 对局。',
         },
         rolePreset: {
           type: 'string', enum: ['basic', 'percival-morgana', 'mordred-oberon'],
           default: DEFAULT_AVALON_ROLE_PRESET,
-          description: '经过平衡约束的角色组合；莫德雷德与奥伯伦组合仅支持七人局。',
+          description: '经过平衡约束的角色组合；莫德雷德与奥伯伦组合支持七人局和八人局。',
         },
         humanRole: {
           type: 'string', enum: AVALON_ROLES,
@@ -560,8 +561,8 @@ export function createAvalonDefinition(config: Required<Config>): GameDefinition
         throw new Error('Avalon config has unexpected fields')
       }
       const playerCount = record.playerCount ?? 5
-      if (playerCount !== 5 && playerCount !== 6 && playerCount !== 7) {
-        throw new Error('Avalon player count must be 5, 6, or 7')
+      if (playerCount !== 5 && playerCount !== 6 && playerCount !== 7 && playerCount !== 8) {
+        throw new Error('Avalon player count must be 5, 6, 7, or 8')
       }
       const rolePreset = record.rolePreset ?? DEFAULT_AVALON_ROLE_PRESET
       if (typeof rolePreset !== 'string' || !isAvalonRolePreset(rolePreset)) {

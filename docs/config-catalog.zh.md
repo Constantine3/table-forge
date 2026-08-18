@@ -640,7 +640,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/game/game-avalon/src/index.ts:48`](../packages/game/game-avalon/src/index.ts)
+来源：[`packages/game/game-avalon/src/index.ts:49`](../packages/game/game-avalon/src/index.ts)
 
 <a id="deepseek-aidsh-game-controller-agent"></a>
 

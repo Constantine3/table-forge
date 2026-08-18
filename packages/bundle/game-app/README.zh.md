@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`dsh-game-app` 是 Table Forge 产品层。它叠加在 `dsh-web-app` 之后，挂载游戏注册表、SQLite 对局持久化、事件溯源引擎、剪刀石头布与五人、六人或七人阿瓦隆定义、Agent 控制器、通用浏览器根界面以及两种游戏界面。
+`dsh-game-app` 是 Table Forge 产品层。它叠加在 `dsh-web-app` 之后，挂载游戏注册表、SQLite 对局持久化、事件溯源引擎、剪刀石头布与五至八人阿瓦隆定义、Agent 控制器、通用浏览器根界面以及两种游戏界面。
 
 使用 `dsh game` 运行交付的组合。游戏 profile 配置 `deepseek-self-deployment`（通过 `http://127.0.0.1:4100/v1` 调用最高推理档、流空闲等待上限为十分钟的 `deepseek-v4-flash-vision`）和 `hy3-tokenhub`（通过腾讯 TokenHub 调用高推理档的 `hy3`）。Agent 控制器会把两个路由上的每次模型请求限制为最多输出 16,384 个 token，并在超时后改用高推理档，直至动作成功。开桌表单只列出已激活的配置提供方，不提供模型、端点或凭据字段；凭据分别读取自 `DEEPSEEK_API_KEY` 与 `HY3_TOKENHUB_API_KEY`。Host 会在选择前探测仅限局域网的自部署路由；该路由不可达时，TokenHub 仍作为云端备选。后续 profile patch 可以调整该目录或增加其他游戏定义，无需修改引擎。
 

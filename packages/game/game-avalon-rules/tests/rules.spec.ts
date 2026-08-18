@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AVALON_RULES_VERSION,
   AVALON_ROLES,
   DEFAULT_AVALON_ROLE_PRESET,
   avalonRoleAlignment,
@@ -16,6 +17,7 @@ import {
 
 describe('Avalon shared rules', () => {
   it('describes every role and its information network', () => {
+    expect(AVALON_RULES_VERSION).toBe(12)
     expect(DEFAULT_AVALON_ROLE_PRESET).toBe('percival-morgana')
     expect(AVALON_ROLES.map(avalonRoleLabel)).toEqual([
       '梅林', '派西维尔', '亚瑟的忠臣', '刺客', '莫甘娜', '莫德雷德', '奥伯伦', '莫德雷德的爪牙',
@@ -44,6 +46,9 @@ describe('Avalon shared rules', () => {
     expect(avalonRolePresetsForPlayerCount(7).map(preset => preset.id)).toEqual([
       'basic', 'percival-morgana', 'mordred-oberon',
     ])
+    expect(avalonRolePresetsForPlayerCount(8).map(preset => preset.id)).toEqual([
+      'basic', 'percival-morgana', 'mordred-oberon',
+    ])
     expect(avalonRolePresetInfo('mordred-oberon')).toMatchObject({ label: '莫德雷德与奥伯伦' })
     expect(isAvalonRolePreset('basic')).toBe(true)
     expect(isAvalonRolePreset('custom')).toBe(false)
@@ -60,6 +65,13 @@ describe('Avalon shared rules', () => {
     })
     expect(resolveAvalonRules(7, 'mordred-oberon')).toMatchObject({
       roleDeck: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'mordred', 'oberon'],
+      missionFailThresholds: [1, 1, 1, 2, 1],
+    })
+    expect(resolveAvalonRules(8, 'percival-morgana')).toMatchObject({
+      roleDeck: [
+        'merlin', 'percival', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'morgana', 'minion',
+      ],
+      missionSizes: [3, 4, 4, 5, 5],
       missionFailThresholds: [1, 1, 1, 2, 1],
     })
     expect(() => resolveAvalonRules(5, 'mordred-oberon')).toThrow(/does not support 5 players/)

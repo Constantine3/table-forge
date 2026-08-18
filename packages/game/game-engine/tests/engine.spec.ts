@@ -303,8 +303,24 @@ describe('game engine transactions', () => {
     const { ctx, engine } = await mounted()
     const availability = vi.fn<() => Promise<{ available: boolean; message?: string }>>(() => Promise.resolve({ available: true }))
     ctx.gameControllers.register('agent', { validate: async () => undefined, availability, drive: async () => undefined, cancel: async () => undefined })
-    const created = await engine.remoteCreate({
+    await expect(engine.remoteCreate({
       gameId: definition.id, config: {}, seats: [
+        { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'p', model: 'm' } },
+      ],
+    })).rejects.toThrow(
+      `game '${definition.id}' create request has no rules version; reload the page before creating a match`,
+    )
+    expect(availability).not.toHaveBeenCalled()
+    await expect(engine.remoteCreate({
+      gameId: definition.id, expectedRulesVersion: definition.rulesVersion + 1, config: {}, seats: [
+        { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'p', model: 'm' } },
+      ],
+    })).rejects.toThrow(
+      `game '${definition.id}' rules changed from version 2 to 1; reload the page before creating a match`,
+    )
+    expect(availability).not.toHaveBeenCalled()
+    const created = await engine.remoteCreate({
+      gameId: definition.id, expectedRulesVersion: definition.rulesVersion, config: {}, seats: [
         { id: 'human', displayName: 'Human', controller: { type: 'human' } },
         { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'p', model: 'm' } },
       ],
@@ -313,7 +329,9 @@ describe('game engine transactions', () => {
     await expect(engine.remoteProviderAvailability([{ provider: 'p', model: 'm' }])).resolves.toEqual([
       { provider: 'p', model: 'm', available: true },
     ])
-    expect(engine.remoteCatalog()).toEqual([{ id: definition.id, configSchema: definition.configSchema }])
+    expect(engine.remoteCatalog()).toEqual([{
+      id: definition.id, rulesVersion: definition.rulesVersion, configSchema: definition.configSchema,
+    }])
     expect(await engine.remoteGet(created.id)).toEqual(await engine.get(MatchId(created.id), SeatId('human')))
     expect(await engine.remoteGet('missing')).toBeUndefined()
     expect(await engine.remoteList()).toEqual(await engine.list())
@@ -327,20 +345,20 @@ describe('game engine transactions', () => {
       commandId: 'invalid-human-command', action: 'rock',
     })).rejects.toThrow(/no human-controlled seat/)
     await expect(engine.remoteCreate({
-      gameId: definition.id, config: {}, seats: [
+      gameId: definition.id, expectedRulesVersion: definition.rulesVersion, config: {}, seats: [
         { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'p', model: 'm' } },
       ],
     })).resolves.toMatchObject({ status: 'active', window: { canAct: false } })
     await expect(engine.remoteAbandon(created.id)).resolves.toMatchObject({ status: 'abandoned' })
     availability.mockResolvedValueOnce({ available: false, message: 'LAN route unavailable' })
     await expect(engine.remoteCreate({
-      gameId: definition.id, config: {}, seats: [
+      gameId: definition.id, expectedRulesVersion: definition.rulesVersion, config: {}, seats: [
         { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'lan', model: 'm' } },
       ],
     })).rejects.toThrow('LAN route unavailable')
     availability.mockResolvedValueOnce({ available: false })
     await expect(engine.remoteCreate({
-      gameId: definition.id, config: {}, seats: [
+      gameId: definition.id, expectedRulesVersion: definition.rulesVersion, config: {}, seats: [
         { id: 'bot', displayName: 'Bot', controller: { type: 'agent', provider: 'offline', model: 'm' } },
       ],
     })).rejects.toThrow("provider 'offline' is unavailable")

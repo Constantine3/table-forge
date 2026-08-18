@@ -72,7 +72,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   })
   await legacyPersistence.create({
     id: MatchId(AVALON_EVIL_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 11,
+    gameId: 'avalon', rulesVersion: 12,
     config: { playerCount: 6, rolePreset: 'basic', humanRole: 'assassin' }, createdAt: 2,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
@@ -232,11 +232,11 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   await page.getByRole('button', { name: /阿瓦隆/ }).click()
   await page.getByRole('heading', { name: '阿瓦隆', exact: true }).waitFor()
   await page.getByRole('button', { name: '全 AI 对局', exact: true }).click()
-  await page.getByLabel('游戏人数').selectOption('7')
-  expect(await page.getByRole('combobox').count()).toBe(8)
-  expect(await page.getByLabel('游戏人数').inputValue()).toBe('7')
+  await page.getByLabel('游戏人数').selectOption('8')
+  expect(await page.getByRole('combobox').count()).toBe(9)
+  expect(await page.getByLabel('游戏人数').inputValue()).toBe('8')
   expect(await page.getByLabel('你的角色').count()).toBe(0)
-  expect(await page.getByLabel('AI 席位 7').count()).toBe(1)
+  expect(await page.getByLabel('AI 席位 8').count()).toBe(1)
   expect(await page.getByRole('button', { name: /莫德雷德与奥伯伦/ }).count()).toBe(1)
   expect(await page.getByText('派西维尔 × 1', { exact: true }).count()).toBe(1)
   const merlinRole = page.getByLabel('梅林 × 1。善方。知道除莫德雷德外的邪方，但必须隐藏自己。', { exact: true })
@@ -256,7 +256,7 @@ it('boots the shipped game product and snapshots installed setup and discussion 
   const discussionPersistence = new SqliteGamePersistence(join(harnessHome, 'games.sqlite'))
   await discussionPersistence.create({
     id: MatchId(AVALON_DISCUSSION_MATCH_ID), formatVersion: MATCH_FORMAT_VERSION,
-    gameId: 'avalon', rulesVersion: 11, config: { playerCount: 5, rolePreset: 'basic' }, createdAt: 3,
+    gameId: 'avalon', rulesVersion: 12, config: { playerCount: 5, rolePreset: 'basic' }, createdAt: 3,
     seats: [
       { id: SeatId('human'), displayName: '你', controller: { type: 'human' } },
       ...[1, 2, 3, 4].map(index => ({

@@ -25,7 +25,12 @@ const sevenSeats = [
   { id: SeatId('ai-6'), displayName: 'AI 6', controller: { type: 'agent' as const, provider: 'p6', model: 'm6' } },
 ] as const satisfies readonly MatchSeatSpec[]
 
-const allAiSeats = [1, 2, 3, 4, 5, 6, 7].map(index => ({
+const eightSeats = [
+  ...sevenSeats,
+  { id: SeatId('ai-7'), displayName: 'AI 7', controller: { type: 'agent' as const, provider: 'p7', model: 'm7' } },
+] as const satisfies readonly MatchSeatSpec[]
+
+const allAiSeats = [1, 2, 3, 4, 5, 6, 7, 8].map(index => ({
   id: SeatId(`ai-${index}`), displayName: `AI ${index}`,
   controller: { type: 'agent' as const, provider: `p${index}`, model: `m${index}` },
 })) satisfies readonly MatchSeatSpec[]
@@ -126,7 +131,8 @@ describe('Avalon definition', () => {
     for (const [playerCount, matchSeats, loyalCount, minionCount] of [
       [5, allAiSeats.slice(0, 5), 2, 1],
       [6, allAiSeats.slice(0, 6), 3, 1],
-      [7, allAiSeats, 3, 2],
+      [7, allAiSeats.slice(0, 7), 3, 2],
+      [8, allAiSeats, 4, 2],
     ] as const) {
       const config = definition.validateConfig({ playerCount, rolePreset: 'basic' })
       const event = definition.initial({ config, seats: matchSeats, randomSeed: `all-ai-${playerCount}` })[0]!
@@ -159,7 +165,7 @@ describe('Avalon definition', () => {
         leaderIndex: 0,
       },
     })
-    expect(() => definition.view(invalidTable)).toThrow(/requires exactly five, six, or seven seats/)
+    expect(() => definition.view(invalidTable)).toThrow(/requires exactly five, six, seven, or eight seats/)
     const wrongDeck = definition.reduce(undefined, {
       type: 'avalon/started',
       data: {
@@ -185,9 +191,10 @@ describe('Avalon definition', () => {
     })
     expect(definition.validateConfig({ playerCount: 6 })).toEqual({ playerCount: 6, rolePreset: 'percival-morgana' })
     expect(definition.validateConfig({ playerCount: 7 })).toEqual({ playerCount: 7, rolePreset: 'percival-morgana' })
+    expect(definition.validateConfig({ playerCount: 8 })).toEqual({ playerCount: 8, rolePreset: 'percival-morgana' })
     expect(() => definition.validateConfig({ variant: 'custom' })).toThrow(/unexpected fields/)
-    expect(() => definition.validateConfig({ playerCount: 4 })).toThrow(/must be 5, 6, or 7/)
-    expect(() => definition.validateConfig({ playerCount: 5.5 })).toThrow(/must be 5, 6, or 7/)
+    expect(() => definition.validateConfig({ playerCount: 4 })).toThrow(/must be 5, 6, 7, or 8/)
+    expect(() => definition.validateConfig({ playerCount: 5.5 })).toThrow(/must be 5, 6, 7, or 8/)
     expect(() => definition.validateConfig({ rolePreset: 'custom' })).toThrow(/role preset is invalid/)
     expect(() => definition.validateConfig({
       playerCount: 5, rolePreset: 'mordred-oberon',
@@ -385,6 +392,63 @@ describe('Avalon definition', () => {
     expect(prompt).toContain('2、3、3、4、4，任务失败所需的失败票数依次为 1、1、1、2、1')
     expect(prompt).toContain('至少 4 票赞成')
     expect(prompt).toContain('6 名非队长依次公开发言')
+  })
+
+  it('applies the eight-player advanced deck, mission rules, discussion length, and vote threshold', () => {
+    const { definition, event, state } = startedState({
+      playerCount: 8, rolePreset: 'mordred-oberon', humanRole: 'oberon',
+    }, eightSeats)
+    const roles = (event.data as { roles: Record<string, AvalonRole> }).roles
+    expect(roles['you']).toBe('oberon')
+    expect(Object.values(roles).sort()).toEqual([
+      'assassin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'merlin', 'mordred', 'oberon',
+    ])
+    expect(definition.view(state)).toMatchObject({
+      playerCount: 8,
+      missionNumber: 1,
+      teamSize: 3,
+      failThreshold: 1,
+      missionSizes: [3, 4, 4, 5, 5],
+      missionFailThresholds: [1, 1, 1, 2, 1],
+    })
+
+    const leader = (definition.view(state) as { leader: SeatId }).leader
+    const proposed = definition.reduce(state, {
+      type: 'avalon/team-proposed',
+      data: { leader, team: eightSeats.slice(0, 3).map(seat => seat.id), direction: 'clockwise' },
+    })
+    const discussed = completeDiscussion(definition, proposed, eightSeats)
+    expect((definition.view(discussed) as { statements: unknown[] }).statements).toHaveLength(8)
+    const voteWindow = definition.pending(discussed)!
+    expect(definition.resolve({
+      state: discussed, window: voteWindow,
+      actions: new Map(eightSeats.map((seat, index) => [seat.id, { type: 'vote-team', approve: index < 4 }])),
+    })[0]).toMatchObject({ data: { approveCount: 4, rejectCount: 4, approved: false } })
+    expect(definition.resolve({
+      state: discussed, window: voteWindow,
+      actions: new Map(eightSeats.map((seat, index) => [seat.id, { type: 'vote-team', approve: index < 5 }])),
+    })[0]).toMatchObject({ data: { approveCount: 5, rejectCount: 3, approved: true } })
+
+    let fourthMission = state
+    for (const [index, success] of [true, false, true].entries()) {
+      fourthMission = definition.reduce(fourthMission, {
+        type: 'avalon/quest-resolved',
+        data: {
+          number: index + 1,
+          team: eightSeats.slice(0, [3, 4, 4][index]).map(seat => seat.id),
+          failCount: success ? 0 : 1,
+          success,
+        },
+      })
+    }
+    expect(definition.view(fourthMission)).toMatchObject({ missionNumber: 4, teamSize: 5, failThreshold: 2 })
+
+    const prompt = definition.modelPrompt(state, eightSeats[0].id)
+    expect(prompt).toContain('你是 8 人阿瓦隆')
+    expect(prompt).toContain('1 名梅林、4 名亚瑟的忠臣、1 名刺客、1 名莫德雷德、1 名奥伯伦')
+    expect(prompt).toContain('3、4、4、5、5，任务失败所需的失败票数依次为 1、1、1、2、1')
+    expect(prompt).toContain('至少 5 票赞成')
+    expect(prompt).toContain('7 名非队长依次公开发言')
   })
 
   it('projects Percival and Morgana as an indistinguishable candidate pair', () => {
@@ -891,14 +955,14 @@ describe('Avalon definition', () => {
     expect(ctx.gameDefinitions.require('avalon').configSchema).toMatchObject({
       type: 'object', additionalProperties: false,
       properties: {
-        playerCount: { enum: [5, 6, 7], default: 5 },
+        playerCount: { enum: [5, 6, 7, 8], default: 5 },
         rolePreset: { enum: ['basic', 'percival-morgana', 'mordred-oberon'], default: 'percival-morgana' },
         humanRole: {
           enum: ['merlin', 'percival', 'loyal-servant', 'assassin', 'morgana', 'mordred', 'oberon', 'minion'],
         },
       },
     })
-    expect(ctx.gameDefinitions.require('avalon').rulesVersion).toBe(11)
+    expect(ctx.gameDefinitions.require('avalon').rulesVersion).toBe(12)
     await fiber.dispose()
     expect(() => ctx.gameDefinitions.require('avalon')).toThrow(/unknown game definition/)
     await ctx.fiber.dispose()

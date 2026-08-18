@@ -44,12 +44,16 @@ export interface GameRemoteProviderAvailability {
 /** Registered game metadata exposed to setup clients. */
 export interface GameRemoteGameInfo {
   readonly id: string
+  /** Current definition version that a setup client must echo when creating a match; absence identifies a pre-handshake Host. */
+  readonly rulesVersion?: number
   readonly configSchema: GameWireJson
 }
 
 /** JSON-safe create request accepted across the Host/Client wire. */
 export interface GameRemoteCreateRequest {
   readonly gameId: string
+  /** Definition version observed in the game catalog; absence identifies a pre-handshake client. */
+  readonly expectedRulesVersion?: number
   readonly config: GameWireJson
   readonly seats: readonly GameRemoteSeatSpec[]
 }

@@ -1,5 +1,8 @@
 /** Browser-safe Avalon role, preset, and mission rules. @module @deepseek-ai/dsh-game-avalon-rules */
 
+/** Rules version shared by the Avalon definition and its browser setup. */
+export const AVALON_RULES_VERSION = 12
+
 /** Roles used by the supported Avalon presets. */
 export type AvalonRole =
   | 'merlin'
@@ -15,7 +18,7 @@ export type AvalonRole =
 export type AvalonAlignment = 'good' | 'evil'
 
 /** Supported Avalon table sizes. */
-export type AvalonPlayerCount = 5 | 6 | 7
+export type AvalonPlayerCount = 5 | 6 | 7 | 8
 
 /** Fair role combinations offered during match setup. */
 export type AvalonRolePreset = 'basic' | 'percival-morgana' | 'mordred-oberon'
@@ -69,7 +72,7 @@ const PRESETS: Readonly<Record<AvalonRolePreset, AvalonRolePresetInfo>> = {
   'mordred-oberon': {
     id: 'mordred-oberon',
     label: '莫德雷德与奥伯伦',
-    description: '七人进阶组合：梅林看不到莫德雷德，奥伯伦脱离邪方协作。',
+    description: '七至八人进阶组合：梅林看不到莫德雷德，奥伯伦脱离邪方协作。',
   },
 }
 
@@ -77,6 +80,7 @@ const MISSION_RULES: Readonly<Record<AvalonPlayerCount, Omit<AvalonRules, 'roleD
   5: { missionSizes: [2, 3, 2, 3, 3], missionFailThresholds: [1, 1, 1, 1, 1] },
   6: { missionSizes: [2, 3, 4, 3, 4], missionFailThresholds: [1, 1, 1, 1, 1] },
   7: { missionSizes: [2, 3, 3, 4, 4], missionFailThresholds: [1, 1, 1, 2, 1] },
+  8: { missionSizes: [3, 4, 4, 5, 5], missionFailThresholds: [1, 1, 1, 2, 1] },
 }
 
 const ROLE_DECKS: Readonly<Record<AvalonRolePreset, Partial<Record<AvalonPlayerCount, readonly AvalonRole[]>>>> = {
@@ -84,14 +88,17 @@ const ROLE_DECKS: Readonly<Record<AvalonRolePreset, Partial<Record<AvalonPlayerC
     5: ['merlin', 'loyal-servant', 'loyal-servant', 'assassin', 'minion'],
     6: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'minion'],
     7: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'minion', 'minion'],
+    8: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'minion', 'minion'],
   },
   'percival-morgana': {
     5: ['merlin', 'percival', 'loyal-servant', 'assassin', 'morgana'],
     6: ['merlin', 'percival', 'loyal-servant', 'loyal-servant', 'assassin', 'morgana'],
     7: ['merlin', 'percival', 'loyal-servant', 'loyal-servant', 'assassin', 'morgana', 'minion'],
+    8: ['merlin', 'percival', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'morgana', 'minion'],
   },
   'mordred-oberon': {
     7: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'mordred', 'oberon'],
+    8: ['merlin', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'loyal-servant', 'assassin', 'mordred', 'oberon'],
   },
 }
 

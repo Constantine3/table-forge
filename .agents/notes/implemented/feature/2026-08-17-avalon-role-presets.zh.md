@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-对局配置接受 `rolePreset`，绝不接受任意身份列表。`percival-morgana` 是五人、六人和七人局的默认预设。`basic` 在所有受支持人数中都可用。`mordred-oberon` 仅支持七人局。规则定义会根据 `playerCount` 校验预设、解析完整牌组，并且只有当 `humanRole` 实际出现在解析后牌组中时才接受该值。`avalon/started` 事件会存储预设与完整分配，阿瓦隆规则版本 `11` 会拒绝更早的预发布对局。
+对局配置接受 `rolePreset`，绝不接受任意身份列表。`percival-morgana` 是五至八人局的默认预设。`basic` 在所有受支持人数中都可用。`mordred-oberon` 支持七人局和八人局。规则定义会根据 `playerCount` 校验预设、解析完整牌组，并且只有当 `humanRole` 实际出现在解析后牌组中时才接受该值。`avalon/started` 事件会存储预设与完整分配，阿瓦隆规则版本 `12` 会拒绝更早的预发布对局。
 
 纯 `@deepseek-ai/dsh-game-avalon-rules` 包统一维护身份 id、名称、能力说明、阵营关系、协作邪方关系、预设可用性、牌组、任务人数与任务失败门槛。确定性规则定义与阿瓦隆浏览器贡献都会导入其主规则模块，该模块不导入 Cordis、Node、React 或插件运行时。客户端打包纯度门只允许这个精确包，同时继续拒绝更深子路径与游戏插件包根路径。身份分配、动作校验、事件归约与投影仍由规则定义负责。
 

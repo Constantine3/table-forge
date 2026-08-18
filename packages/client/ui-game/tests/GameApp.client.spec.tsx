@@ -8,7 +8,7 @@ import {
 const baseState: GameAppState = {
   match: undefined,
   matches: [],
-  games: [{ id: 'rps', configSchema: {} }, { id: 'avalon', configSchema: {} }],
+  games: [{ id: 'rps', rulesVersion: 1, configSchema: {} }, { id: 'avalon', rulesVersion: 12, configSchema: {} }],
   selectedGameId: undefined,
   providers: [],
   audit: undefined,
@@ -74,7 +74,9 @@ describe('generic game product shell', () => {
     const bench = mount({ ...baseState, selectedGameId: 'avalon' })
     expect(screen.getByText('界面：avalon')).toBeTruthy()
     expect(bench.renderSlot).toHaveBeenCalledWith(
-      'game.surface', expect.objectContaining({ game: { id: 'avalon', configSchema: {} }, match: undefined }),
+      'game.surface', expect.objectContaining({
+        game: { id: 'avalon', rulesVersion: 12, configSchema: {} }, match: undefined,
+      }),
       expect.objectContaining({ entryKey: 'avalon' }),
     )
     fireEvent.click(screen.getByRole('button', { name: /返回游戏列表/ }))
@@ -140,9 +142,11 @@ describe('generic game product shell', () => {
     const surfaceOwner = creation.renderSlot.mock.calls.find(call => call[0] === 'game.surface')?.[1] as {
       createMatch: GameAppInjected['createMatch']
     }
-    await surfaceOwner.createMatch({ gameId: 'avalon', config: {}, seats: [] })
+    await surfaceOwner.createMatch({ gameId: 'avalon', expectedRulesVersion: 12, config: {}, seats: [] })
     expect(requestPermission).toHaveBeenCalledOnce()
-    expect(creation.createMatch).toHaveBeenCalledWith({ gameId: 'avalon', config: {}, seats: [] })
+    expect(creation.createMatch).toHaveBeenCalledWith({
+      gameId: 'avalon', expectedRulesVersion: 12, config: {}, seats: [],
+    })
   })
 
   it('notifies an unattended human action window once even when it first appeared in the foreground', () => {

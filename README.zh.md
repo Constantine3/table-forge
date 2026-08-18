@@ -28,7 +28,7 @@ npx @deepseek-ai/dsh web
 npx @deepseek-ai/dsh game
 ```
 
-Table Forge 包含石头剪刀布和五人、六人或七人阿瓦隆，支持人类与 AI 同场或全 AI 游玩。
+Table Forge 包含石头剪刀布和五至八人阿瓦隆，支持人类与 AI 同场或全 AI 游玩。
 
 ### 从源码运行
 

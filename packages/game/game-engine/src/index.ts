@@ -405,6 +405,17 @@ export class GameEngine extends TypertRemoteService implements MatchService {
    */
   @Remote('create')
   async remoteCreate(request: GameRemoteCreateRequest): Promise<GameRemoteMatchView> {
+    const definition = this.ctx.gameDefinitions.require(request.gameId)
+    if (request.expectedRulesVersion === undefined) {
+      throw new Error(
+        `game '${request.gameId}' create request has no rules version; reload the page before creating a match`,
+      )
+    }
+    if (request.expectedRulesVersion !== definition.rulesVersion) {
+      throw new Error(
+        `game '${request.gameId}' rules changed from version ${request.expectedRulesVersion} to ${definition.rulesVersion}; reload the page before creating a match`,
+      )
+    }
     const seats = request.seats.map(seat => ({ ...seat, id: SeatId(seat.id) }))
     await Promise.all(seats.flatMap((seat) => {
       const controller = seat.controller
@@ -437,7 +448,11 @@ export class GameEngine extends TypertRemoteService implements MatchService {
    */
   @Remote('catalog')
   remoteCatalog(): readonly GameRemoteGameInfo[] {
-    return this.ctx.gameDefinitions.list().map(definition => ({ id: definition.id, configSchema: definition.configSchema }))
+    return this.ctx.gameDefinitions.list().map(definition => ({
+      id: definition.id,
+      rulesVersion: definition.rulesVersion,
+      configSchema: definition.configSchema,
+    }))
   }
 
   /** Return the human-safe view.

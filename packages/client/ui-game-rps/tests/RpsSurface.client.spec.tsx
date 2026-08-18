@@ -51,12 +51,12 @@ describe('RPS game UI contribution', () => {
 
     const actions = operations()
     view.rerender(<RpsSurface {...({
-      game: { id: 'rps', configSchema: { properties: { roundCount: { default: 3, maximum: 9 } } } },
+      game: { id: 'rps', rulesVersion: 1, configSchema: { properties: { roundCount: { default: 3, maximum: 9 } } } },
       match: undefined, providers: [provider], audit: undefined, busy: false, ...actions,
     } as unknown as Parameters<typeof RpsSurface>[0])} />)
     fireEvent.click(screen.getByRole('button', { name: '开始对局' }))
     expect(actions.createMatch).toHaveBeenCalledWith({
-      gameId: 'rps', config: { roundCount: 3 },
+      gameId: 'rps', expectedRulesVersion: 1, config: { roundCount: 3 },
       seats: [
         { id: 'human', displayName: '你', controller: { type: 'human' } },
         { id: 'ai-1', displayName: 'AI 一号', controller: { type: 'agent', provider: 'local', model: 'model' } },
@@ -73,7 +73,7 @@ describe('RPS game UI contribution', () => {
       blockedSeats: [], game: { roundCount: 1, rounds: [], scores: { human: 0, ai: 0 }, winner: null },
     }
     render(<RpsSurface {...({
-      game: { id: 'rps', configSchema: {} }, match, providers: [provider], audit: undefined, busy: false, ...actions,
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} }, match, providers: [provider], audit: undefined, busy: false, ...actions,
     } as Parameters<typeof RpsSurface>[0])} />)
     for (const name of [/石头/, /布/, /剪刀/]) fireEvent.click(screen.getByRole('button', { name }))
     expect(actions.submitAction).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -84,11 +84,23 @@ describe('RPS game UI contribution', () => {
     expect(screen.getByText('已锁定选择')).toBeTruthy()
   })
 
+  it('blocks setup when the Host predates the rules-version handshake', () => {
+    const actions = operations()
+    render(<RpsSurface {...({
+      game: { id: 'rps', configSchema: { properties: { roundCount: { default: 3, maximum: 9 } } } },
+      match: undefined, providers: [provider], audit: undefined, busy: false, ...actions,
+    } as Parameters<typeof RpsSurface>[0])} />)
+    expect(screen.getByRole('alert').textContent).toContain('服务版本不一致')
+    expect(screen.getByRole('button', { name: '开始对局' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '开始对局' }))
+    expect(actions.createMatch).not.toHaveBeenCalled()
+  })
+
   it('configures two independent AI seats and handles unavailable setup routes', () => {
     const actions = operations()
     const alternate = { id: 'alternate', name: 'Alternate', model: 'other', available: true }
     const view = render(<RpsSurface {...({
-      game: { id: 'rps', configSchema: { properties: { roundCount: { default: 3, maximum: 9 } } } },
+      game: { id: 'rps', rulesVersion: 1, configSchema: { properties: { roundCount: { default: 3, maximum: 9 } } } },
       match: undefined, providers: [provider, alternate], audit: undefined, busy: false, ...actions,
     } as Parameters<typeof RpsSurface>[0])} />)
     fireEvent.click(screen.getByRole('button', { name: 'AI 对 AI' }))
@@ -100,7 +112,7 @@ describe('RPS game UI contribution', () => {
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: '开始对局' }))
     expect(actions.createMatch).toHaveBeenCalledWith({
-      gameId: 'rps', config: { roundCount: 5 },
+      gameId: 'rps', expectedRulesVersion: 1, config: { roundCount: 5 },
       seats: [
         { id: 'ai-1', displayName: 'AI 一号', controller: { type: 'agent', provider: 'alternate', model: 'other' } },
         { id: 'ai-2', displayName: 'AI 二号', controller: { type: 'agent', provider: 'local', model: 'model' } },
@@ -108,7 +120,7 @@ describe('RPS game UI contribution', () => {
     })
 
     view.rerender(<RpsSurface {...({
-      game: { id: 'rps', configSchema: {} }, match: undefined,
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} }, match: undefined,
       providers: [{ ...provider, available: false }], audit: undefined, busy: true, ...actions,
     } as Parameters<typeof RpsSurface>[0])} />)
     expect(screen.getAllByText('没有从当前游戏主机可达的提供方。')).toHaveLength(2)
@@ -124,7 +136,7 @@ describe('RPS game UI contribution', () => {
       blockedSeats: [], game: { roundCount: 1, rounds: [], scores: { human: 0 }, winner: null },
     }
     const view = render(<RpsSurface {...({
-      game: { id: 'rps', configSchema: {} }, match: waiting, providers: [provider], audit: undefined, busy: false, ...actions,
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} }, match: waiting, providers: [provider], audit: undefined, busy: false, ...actions,
     } as Parameters<typeof RpsSurface>[0])} />)
     expect(screen.getByText(/AI 正在选择/)).toBeTruthy()
     expect(screen.getAllByText('正在选择…')).toHaveLength(2)
@@ -133,7 +145,7 @@ describe('RPS game UI contribution', () => {
     expect(actions.resetMatch).toHaveBeenCalledOnce()
 
     view.rerender(<RpsSurface {...({
-      game: { id: 'rps', configSchema: {} },
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} },
       match: { ...waiting, status: 'blocked', blockedSeats: [{ seatId: 'ai', message: 'provider failed' }] },
       providers: [provider], audit: undefined, busy: false, ...actions,
     } as Parameters<typeof RpsSurface>[0])} />)
@@ -144,7 +156,7 @@ describe('RPS game UI contribution', () => {
     expect(actions.resetMatch).toHaveBeenCalledTimes(2)
 
     view.rerender(<RpsSurface {...({
-      game: { id: 'rps', configSchema: {} }, match: { ...waiting, status: 'abandoned', window: undefined },
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} }, match: { ...waiting, status: 'abandoned', window: undefined },
       providers: [provider], audit: undefined, busy: false, ...actions,
     } as unknown as Parameters<typeof RpsSurface>[0])} />)
     expect(screen.getByText('对局已结束')).toBeTruthy()
@@ -166,7 +178,7 @@ describe('RPS game UI contribution', () => {
       },
     }
     const view = render(<RpsSurface {...({
-      game: { id: 'rps', configSchema: {} }, match: finished, providers: [provider], audit: undefined, busy: false, ...actions,
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} }, match: finished, providers: [provider], audit: undefined, busy: false, ...actions,
     } as Parameters<typeof RpsSurface>[0])} />)
     expect(screen.getByText('本场平局')).toBeTruthy()
     expect(screen.getByText((_text, element) => element?.textContent === '你：—')).toBeTruthy()
@@ -174,7 +186,7 @@ describe('RPS game UI contribution', () => {
     expect(screen.getByText('AI胜')).toBeTruthy()
     expect(screen.getByText('胜者胜')).toBeTruthy()
     view.rerender(<RpsSurface {...{
-      game: { id: 'rps', configSchema: {} },
+      game: { id: 'rps', rulesVersion: 1, configSchema: {} },
       match: { ...finished, game: { ...(finished.game as object), winner: 'missing' } },
       providers: [provider], busy: false, ...actions,
     }} />)

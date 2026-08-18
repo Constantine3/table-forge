@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This browser plugin contributes the `rps` catalog card, setup form, and board to `dsh-client-ui-game`. Setup supports human versus AI and AI versus AI, fixed round count from the deployment schema, and independently selectable reachable providers. The board renders sealed-choice status, scores, resolved rounds, terminal results, blocked-controller recovery, and the shared post-finish AI audit timeline with each model's accepted choice.
+This browser plugin contributes the `rps` catalog card, setup form, and board to `dsh-client-ui-game`. Setup supports human versus AI and AI versus AI, fixed round count from the deployment schema, and independently selectable reachable providers. It echoes the Host-published rules version on creation and disables setup with a restart prompt when a pre-handshake Host omits that version. The board renders sealed-choice status, scores, resolved rounds, terminal results, blocked-controller recovery, and the shared post-finish AI audit timeline with each model's accepted choice.
 
 ## Model Experience
 

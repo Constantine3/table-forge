@@ -28,7 +28,7 @@ To start Table Forge instead, run:
 npx @deepseek-ai/dsh game
 ```
 
-Table Forge includes rock-paper-scissors and five-, six-, or seven-player Avalon, with human-and-AI or all-AI play.
+Table Forge includes rock-paper-scissors and five- through eight-player Avalon, with human-and-AI or all-AI play.
 
 ### Run from source
 
